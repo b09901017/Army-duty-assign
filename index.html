@@ -45,6 +45,7 @@
 var PEOPLE=[{id:1,code:"01",name:"李愷宸"},{id:2,code:"02",name:"江偉綸"},{id:3,code:"03",name:"陳柏翰"},{id:4,code:"04",name:"鄧旭辰"},{id:5,code:"05",name:"廖翊滕"},{id:6,code:"06",name:"陳俊穎"},{id:7,code:"07",name:"林柏宇"},{id:8,code:"08",name:"林崇浩"}];
 var ORDER=[1,2,3,4,5,6,7,8];
 var PERIODS=[{key:"AM",label:"上午",meal:"早"},{key:"NOON",label:"午",meal:"午"},{key:"PM",label:"晚",meal:"晚"}];
+var GROUPS=[{key:"AM",label:"上午"},{key:"NOON",label:"午"},{key:"PM",label:"晚"},{key:"GC",label:"公差"}];
 var C={bg:"#F1F3EE",surface:"#fff",ink:"#20261E",sub:"#6C7268",line:"#E3E5DC",green:"#3B6147",greenDeep:"#2A4634",greenSoft:"#E9EFE8",brass:"#A9793F",brassSoft:"#F5ECDB",amber:"#9A6B14",amberSoft:"#F7EFDB",red:"#B0453C",redSoft:"#F6E5E2"};
 var PAL=["#3B6147","#4E6E8E","#8E5A6E","#6E7D3D","#B06A3C","#4C7D74","#7A6BA8","#997A2E","#A65A5A","#5B8C6E","#54708A","#8A6D3B","#6B5B95","#3F7D6E","#A34E5E","#5F8C3A","#7E6248","#4670A0","#9C5B7C","#4A8577"];
 var STORE_KEY="duty-board-v3";
@@ -55,7 +56,9 @@ function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp
 function nameOf(id){return state.names[id];}
 function personByCode(pid){for(var i=0;i<PEOPLE.length;i++)if(PEOPLE[i].id===pid)return PEOPLE[i];return null;}
 function splitColon(line){var i=line.search(/[：:]/);if(i<0)return null;return {label:line.slice(0,i).trim(),colon:line[i],rhs:line.slice(i+1)};}
-function catColor(cat){if(cat==="打飯")return C.brass;var h=0;for(var i=0;i<cat.length;i++)h=(h*31+cat.charCodeAt(i))>>>0;return PAL[h%PAL.length];}
+var GCOLORS={"打飯":"#A9793F","公差":"#4E6E8E","打掃":"#3B6147"};
+function deriveGroup(cat){if(cat==="打飯")return "打飯";if(/公差|車場|鋁床|經理|保槍|安官|衛哨|哨/.test(cat))return "公差";return "打掃";}
+function catColor(cat){var g=(typeof HIST!=="undefined"&&HIST.cg&&HIST.cg[cat])||deriveGroup(cat);return GCOLORS[g]||"#888";}
 function sum(o){var s=0;for(var k in o)s+=o[k];return s;}
 function todayLabel(){var d=new Date();return (d.getMonth()+1)+"/"+d.getDate();}
 function extractDate(t){var m=t.match(/(\d{1,2})\s*[\/月]\s*(\d{1,2})/);return m?(parseInt(m[1],10)+"/"+parseInt(m[2],10)):null;}
@@ -83,21 +86,64 @@ var state={
   page:"board",
   showPaste:false,showPreview:false,
   addForm:{open:false,name:"",period:"AM",count:1,keepAll:false},
-  importOpen:false,confirmReset:false
+  importOpen:false,confirmReset:false,backupOpen:false,
+  syncUrl:(function(){try{return localStorage.getItem("duty-sync-url")||"";}catch(e){return "";}})(),
+  syncStatus:"",syncOpen:false
 };
-var pasteText="",importText="";
-function persist(){try{localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue}));}catch(e){}}
+var pasteText="",importText="",restoreText="",syncInput="";
+function persistLocal(){try{localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue}));}catch(e){}}
+function persist(){persistLocal();pushSync();}
+var SYNC_KEY="duty-sync-url",pushT=null,lastPushAt=0,pollTimer=null;
+function payload(){return JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue});}
+function syncBadge(){var el=document.getElementById("syncdot");if(el)el.style.background=state.syncStatus==="on"?C.green:state.syncStatus==="err"?C.red:C.line;}
+function pushSync(){
+  if(!state.syncUrl)return;
+  clearTimeout(pushT);
+  pushT=setTimeout(function(){
+    lastPushAt=Date.now();
+    fetch(state.syncUrl,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:payload()}).then(function(){state.syncStatus="on";syncBadge();}).catch(function(){state.syncStatus="err";syncBadge();});
+  },400);
+}
+function applyRemote(o){
+  if(!o||!o.names)return false;
+  var rem=JSON.stringify({names:o.names,log:o.log||[],mealQueue:(o.mealQueue&&o.mealQueue.length===8)?o.mealQueue:state.mealQueue});
+  var cur=JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue});
+  if(rem===cur)return false;
+  state.names=o.names;if(o.log)state.log=o.log;if(o.mealQueue&&o.mealQueue.length===8)state.mealQueue=o.mealQueue;
+  persistLocal();return true;
+}
+function pullSync(){
+  if(!state.syncUrl)return;
+  if(Date.now()-lastPushAt<3000)return;
+  fetch(state.syncUrl).then(function(r){return r.text();}).then(function(txt){
+    var o={};try{o=JSON.parse(txt);}catch(e){return;}
+    state.syncStatus="on";
+    if(applyRemote(o))render();else syncBadge();
+  }).catch(function(){state.syncStatus="err";syncBadge();});
+}
+function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(pullSync,20000);}
+function connectSync(url){
+  url=(url||"").trim();if(!url){flash("先貼上網址");return;}
+  state.syncUrl=url;try{localStorage.setItem(SYNC_KEY,url);}catch(e){}
+  state.syncStatus="sync";render();
+  fetch(url).then(function(r){return r.text();}).then(function(txt){
+    var o={};try{o=JSON.parse(txt);}catch(e){}
+    if(o&&o.names){applyRemote(o);flash("已連上雲端，載入共用紀錄");}else{pushSync();flash("已連上雲端，已上傳本機紀錄");}
+    state.syncStatus="on";state.syncOpen=false;startPoll();render();
+  }).catch(function(){state.syncStatus="err";flash("連不上，檢查網址或部署設定（要選『任何人』）");render();});
+}
+function disconnectSync(){state.syncUrl="";try{localStorage.removeItem(SYNC_KEY);}catch(e){}state.syncStatus="";state.syncOpen=false;if(pollTimer)clearInterval(pollTimer);flash("已中斷同步（改回只存本機）");render();}
 
-var HIST={};
-function getHistory(){var h={};PEOPLE.forEach(function(p){h[p.id]={};});state.log.forEach(function(e){e.entries.forEach(function(x){if(!h[x.p])h[x.p]={};h[x.p][x.c]=(h[x.p][x.c]||0)+1;});});return h;}
+var HIST={h:{},cg:{}};
+function getHistory(){var h={},cg={};PEOPLE.forEach(function(p){h[p.id]={};});state.log.forEach(function(e){e.entries.forEach(function(x){if(!h[x.p])h[x.p]={};h[x.p][x.c]=(h[x.p][x.c]||0)+1;if(x.g)cg[x.c]=x.g;else if(!cg[x.c])cg[x.c]=deriveGroup(x.c);});});return {h:h,cg:cg};}
 function refreshHist(){HIST=getHistory();}
-function total(id){return sum(HIST[id]||{});}
-function nonMealTotal(id){var h=HIST[id]||{},s=0;for(var k in h){if(k!=="打飯")s+=h[k];}return s;}
+function total(id){return sum(HIST.h[id]||{});}
+function nonMealTotal(id){var h=HIST.h[id]||{},s=0;for(var k in h){if(k!=="打飯")s+=h[k];}return s;}
 
 var toastT=null;
 function flash(m){var t=document.getElementById("toast");t.textContent=m;t.className="toast show";clearTimeout(toastT);toastT=setTimeout(function(){t.className="toast";},2200);}
 
-function blockOf(d){if(d.kind==="meal"){return d.label.indexOf("早")>=0?"AM":d.label.indexOf("午")>=0?"NOON":null;}return d.period;}
+function blockOf(d){if(d.kind==="meal"){return d.label.indexOf("早")>=0?"AM":d.label.indexOf("午")>=0?"NOON":null;}if(d.period==="GC")return null;return d.period;}
 
 /* ---------- 解析公版 ---------- */
 function parseGongban(text){
@@ -105,30 +151,46 @@ function parseGongban(text){
   var meta=lines.map(function(raw,idx){
     var line=raw,t=line.trim();
     if(line.indexOf("🔷")>=0){section=line.indexOf("公差")>=0?"gongcha":line.indexOf("打飯")>=0?"meal":"clean";return {type:"static",text:raw};}
-    if(/^(上午|中午|下午|午|晚|晚間|晚上)$/.test(t)){sub=/上午/.test(t)?"AM":/(晚|下午)/.test(t)?"PM":"NOON";return {type:"static",text:raw};}
-    if(section==="gongcha")return {type:"static",text:raw};
     var sc=splitColon(line);
-    if(sc){var mm=sc.label.match(/(早打|午打|晚打)/);if(mm){var per=mm[1]==="早打"?"AM":mm[1]==="午打"?"NOON":"PM";var dm={id:"d"+idx,kind:"meal",label:sc.label,period:per,count:1,assigned:[],keepAll:false,removed:false,original:raw};duties.push(dm);return {type:"duty",dutyId:dm.id};}}
-    if(/261/.test(line)&&sc){
-      var toks=sc.rhs.split("+").map(function(x){return x.trim();}),fi=-1,cnt=1,ot="261";
-      for(var i=0;i<toks.length;i++){var tm=toks[i].match(/^261\s*(?:\*\s*(\d+))?$/);if(tm){fi=i;cnt=tm[1]?parseInt(tm[1],10):1;ot=toks[i];break;}}
-      if(fi>=0){var df={id:"d"+idx,kind:"fill",label:sc.label,period:sub,count:cnt,assigned:[],keepAll:false,removed:false,original:raw,tokIdx:fi,origTok:ot};duties.push(df);return {type:"duty",dutyId:df.id};}
-    }
-    return {type:"static",text:raw};
+    if(!sc){if(/上午/.test(t))sub="AM";else if(/(晚間|晚上|晚|下午)/.test(t))sub="PM";else if(/(中午|午)/.test(t))sub="NOON";return {type:"static",text:raw};}
+    var lb=sc.label.replace(/^[\(（]?\s*\d+\s*[\)）]?[\.、]?\s*/,"").trim();
+    if(!lb)return {type:"static",text:raw};
+    var period=section==="gongcha"?"GC":sub;
+    var mm=lb.match(/(早打|午打|晚打)/);
+    if(mm){var per=mm[1]==="早打"?"AM":mm[1]==="午打"?"NOON":"PM";var dm={id:"d"+idx,kind:"meal",mode:"append",label:lb,period:per,count:1,assigned:[],keepAll:false,removed:false,original:raw};duties.push(dm);return {type:"duty",dutyId:dm.id};}
+    var toks=sc.rhs.split(/[+、,，]/).map(function(x){return x.trim();}),ot=null,cnt=1;
+    for(var i=0;i<toks.length;i++){var tm=toks[i].match(/^261\s*(?:\*\s*(\d+))?$/);if(tm){ot=toks[i];cnt=tm[1]?parseInt(tm[1],10):1;break;}}
+    var d=ot?{id:"d"+idx,kind:"fill",mode:"replace",label:lb,period:period,count:cnt,assigned:[],keepAll:false,removed:false,original:raw,origTok:ot}
+            :{id:"d"+idx,kind:"fill",mode:"append",label:lb,period:period,count:1,assigned:[],keepAll:false,removed:false,original:raw};
+    duties.push(d);return {type:"duty",dutyId:d.id};
   });
   return {meta:meta,duties:duties};
 }
 function dutyById(id){for(var i=0;i<state.duties.length;i++)if(state.duties[i].id===id)return state.duties[i];return null;}
+function fillReplace(d){
+  var s=d.original;
+  if(d.removed)return s.replace(/([+、])?261(\*\d+)?/,"");
+  if(d.keepAll)return s;
+  var names=d.assigned.map(nameOf);
+  if(!names.length)return s.replace(/([+、])?261(\*\d+)?/,"");
+  return s.replace(/([+、])?261(\*\d+)?/,function(mm,sep){var j=sep||"+";return (sep||"")+names.join(j);});
+}
+function fillAppend(d){
+  if(d.removed)return d.original;
+  var s=d.original.replace(/\s+$/,"");
+  var names=d.keepAll?["261"]:d.assigned.map(nameOf);
+  if(!names.length)return d.original;
+  var sc=splitColon(s),rhs=sc?sc.rhs:"";
+  var sep=rhs.indexOf("、")>=0?"、":(rhs.indexOf("+")>=0?"+":"、");
+  var last=s.slice(-1);
+  if(last==="、"||last==="，"||last==="+")return s+names.join(sep);
+  if(last==="："||last===":")return s+names.join(sep);
+  return s+sep+names.join(sep);
+}
 function rebuildLine(m){
   if(m.type==="static")return m.text;
   var d=dutyById(m.dutyId);if(!d)return "";
-  if(d.kind==="meal"){return (!d.removed&&d.assigned.length)?d.original.replace(/\s+$/,"")+" + "+d.assigned.map(nameOf).join(" + "):d.original;}
-  var sc=splitColon(d.original);if(!sc)return d.original;
-  var toks=sc.rhs.split("+").map(function(x){return x.trim();}),fi=d.tokIdx;
-  if(d.keepAll&&!d.removed)toks[fi]=d.origTok;
-  else if(!d.removed&&d.assigned.length)toks[fi]=d.assigned.map(nameOf).join("+");
-  else toks.splice(fi,1);
-  return sc.label+sc.colon+toks.join("+");
+  return d.mode==="replace"?fillReplace(d):fillAppend(d);
 }
 function buildFilled(){
   var base=state.gongban.meta.map(rebuildLine).join("\n");
@@ -136,17 +198,17 @@ function buildFilled(){
   return base+(extra.length?"\n"+extra.join("\n"):"");
 }
 function parseFilled(text){
-  var lines=text.replace(/\r/g,"").split("\n"),dateLabel=extractDate(text)||todayLabel(),entries=[];
+  var lines=text.replace(/\r/g,"").split("\n"),dateLabel=extractDate(text)||todayLabel(),entries=[],section="";
   var nmeMap={};PEOPLE.forEach(function(p){nmeMap[state.names[p.id]]=p.id;});
   lines.forEach(function(line){
-    if(line.indexOf("🔷")>=0)return;
+    if(line.indexOf("🔷")>=0){section=line.indexOf("公差")>=0?"gongcha":line.indexOf("打飯")>=0?"meal":"clean";return;}
     var sc=splitColon(line);if(!sc)return;
     var lb=sc.label.replace(/^[\(（]?\s*\d+\s*[\)）]?[\.、]?\s*/,"").trim();if(!lb)return;
-    var cat=/(早打|午打|晚打|打飯)/.test(lb)?"打飯":lb;
+    var isMeal=/(早打|午打|晚打|打飯)/.test(lb),cat=isMeal?"打飯":lb,g=isMeal?"打飯":section==="gongcha"?"公差":"打掃";
     var toks=sc.rhs.split(/[+、,，\s]+/).map(function(x){return x.trim();}).filter(Boolean);
     var allT=/八人一起|全班/.test(sc.rhs)||toks.some(function(x){return /^261(\*\d+)?$/.test(x);});
-    if(allT){PEOPLE.forEach(function(p){entries.push({p:p.id,c:cat});});}
-    else{toks.forEach(function(tk){if(Object.prototype.hasOwnProperty.call(nmeMap,tk))entries.push({p:nmeMap[tk],c:cat});});}
+    if(allT){PEOPLE.forEach(function(p){entries.push({p:p.id,c:cat,g:g});});}
+    else{toks.forEach(function(tk){if(Object.prototype.hasOwnProperty.call(nmeMap,tk))entries.push({p:nmeMap[tk],c:cat,g:g});});}
   });
   return {date:dateLabel,entries:entries};
 }
@@ -175,7 +237,7 @@ function autoAssign(){
   var pset={AM:{},NOON:{},PM:{}};
   state.duties.forEach(function(d){if(d.removed||d.keepAll)return;var b=blockOf(d);d.assigned.forEach(function(pid){if(d.kind!=="meal")work[pid]=(work[pid]||0)+1;if(b)pset[b][pid]=true;});});
   var catWork={};
-  function cw(cat,pid){if(!catWork[cat])catWork[cat]={};if(catWork[cat][pid]===undefined)catWork[cat][pid]=(HIST[pid]&&HIST[pid][cat])||0;return catWork[cat][pid];}
+  function cw(cat,pid){if(!catWork[cat])catWork[cat]={};if(catWork[cat][pid]===undefined)catWork[cat][pid]=(HIST.h[pid]&&HIST.h[pid][cat])||0;return catWork[cat][pid];}
   state.duties.forEach(function(d){if(d.kind==="meal"||d.removed||d.keepAll)return;d.assigned.forEach(function(pid){catWork[d.label]=catWork[d.label]||{};catWork[d.label][pid]=cw(d.label,pid)+1;});});
   var avail=PEOPLE.filter(function(p){return state.available[p.id];}),short=false;
   state.duties.forEach(function(d){
@@ -194,8 +256,9 @@ function commit(){
   var entries=[];
   state.duties.forEach(function(d){
     if(d.removed)return;
-    if(d.keepAll){PEOPLE.forEach(function(p){entries.push({p:p.id,c:d.label});});}
-    else{var cat=d.kind==="meal"?"打飯":d.label;d.assigned.forEach(function(pid){entries.push({p:pid,c:cat});});}
+    var g=d.kind==="meal"?"打飯":d.period==="GC"?"公差":"打掃";
+    if(d.keepAll){PEOPLE.forEach(function(p){entries.push({p:p.id,c:d.label,g:g});});}
+    else{var cat=d.kind==="meal"?"打飯":d.label;d.assigned.forEach(function(pid){entries.push({p:pid,c:cat,g:g});});}
   });
   if(!entries.length){flash("目前沒有可計入的分配");return;}
   var date=extractDate(state.gongban.raw)||todayLabel();
@@ -216,7 +279,7 @@ function clearPerson(pid){for(var i=state.log.length-1;i>=0;i--){var e=state.log
 function badge(code,size,tone){var bg=tone==="mute"?C.line:C.greenDeep,col=tone==="mute"?C.sub:"#fff";return '<span style="width:'+size+'px;height:'+size+'px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:'+bg+';color:'+col+';font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.5px;flex-shrink:0;">'+code+'</span>';}
 function card(inner,extra){return '<div style="background:'+C.surface+';border:1px solid '+C.line+';border-radius:16px;padding:15px;'+(extra||"")+'">'+inner+'</div>';}
 function label(t){return '<div style="font-size:12px;font-weight:800;letter-spacing:1px;color:'+C.sub+';">'+t+'</div>';}
-function header(){var d=new Date().toLocaleDateString("zh-TW",{month:"2-digit",day:"2-digit",weekday:"short"});var title=state.page==="board"?"排班板":"統計";return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><div style="width:36px;height:36px;border-radius:10px;background:'+C.greenDeep+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;">261</div><div><div style="font-size:18px;font-weight:800;">'+title+'</div><div style="font-size:12px;color:'+C.sub+';">'+d+' · 8 員</div></div></div>';}
+function header(){var d=new Date().toLocaleDateString("zh-TW",{month:"2-digit",day:"2-digit",weekday:"short"});var title=state.page==="board"?"排班板":"統計";var dot=state.syncUrl?'<div style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:'+C.sub+';"><span id="syncdot" style="width:8px;height:8px;border-radius:999px;background:'+(state.syncStatus==="on"?C.green:state.syncStatus==="err"?C.red:C.line)+';"></span>雲端</div>':"";return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><div style="width:36px;height:36px;border-radius:10px;background:'+C.greenDeep+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;">261</div><div><div style="font-size:18px;font-weight:800;">'+title+'</div><div style="font-size:12px;color:'+C.sub+';">'+d+' · 8 員</div></div>'+dot+'</div>';}
 
 function pasteCard(){
   var showBox=!state.gongban.loaded||state.showPaste;
@@ -244,13 +307,13 @@ function dutyRow(d,conf){
 function dutyList(){
   var items=state.duties.filter(function(d){return (d.kind==="fill"||d.kind==="manual")&&!d.removed;});
   var conf=computeConflicts(),out="";
-  PERIODS.forEach(function(p){var ds=items.filter(function(d){return d.period===p.key;});if(!ds.length)return;out+='<div style="display:flex;align-items:center;gap:8px;margin:16px 4px 8px;"><span style="font-size:13px;font-weight:800;color:'+C.green+';letter-spacing:1px;">'+p.label+'</span><div style="flex:1;height:1px;background:'+C.line+';"></div></div>';ds.forEach(function(d){out+=dutyRow(d,conf);});});
+  GROUPS.forEach(function(p){var ds=items.filter(function(d){return d.period===p.key;});if(!ds.length)return;out+='<div style="display:flex;align-items:center;gap:8px;margin:16px 4px 8px;"><span style="font-size:13px;font-weight:800;color:'+C.green+';letter-spacing:1px;">'+p.label+'</span><div style="flex:1;height:1px;background:'+C.line+';"></div></div>';ds.forEach(function(d){out+=dutyRow(d,conf);});});
   out+=addDutyBlock();return out;
 }
 function addDutyBlock(){
   var f=state.addForm;
   if(!f.open)return '<button class="btn" data-action="open-add" style="width:100%;margin-top:10px;padding:11px;border-radius:12px;border:1.5px dashed '+C.line+';background:transparent;color:'+C.sub+';font-weight:700;font-size:13.5px;display:flex;align-items:center;justify-content:center;gap:6px;">'+icon("plus",15)+' 手動新增勤務</button>';
-  var seg=PERIODS.map(function(p){var on=f.period===p.key;return '<button class="btn" data-action="af-period" data-p="'+p.key+'" style="flex:1;padding:8px 0;border-radius:8px;font-size:12.5px;font-weight:700;border:1px solid '+(on?C.green:C.line)+';background:'+(on?C.greenSoft:C.surface)+';color:'+(on?C.greenDeep:C.sub)+';">'+p.label+'</button>';}).join("");
+  var seg=GROUPS.map(function(p){var on=f.period===p.key;return '<button class="btn" data-action="af-period" data-p="'+p.key+'" style="flex:1;padding:8px 0;border-radius:8px;font-size:12px;font-weight:700;border:1px solid '+(on?C.green:C.line)+';background:'+(on?C.greenSoft:C.surface)+';color:'+(on?C.greenDeep:C.sub)+';">'+p.label+'</button>';}).join("");
   var stepper=f.keepAll?"":'<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12.5px;color:'+C.sub+';">人數</span><div style="display:flex;align-items:center;gap:2px;border:1px solid '+C.line+';border-radius:9px;padding:2px;"><button class="btn" data-action="af-dec" style="width:28px;height:28px;border-radius:7px;border:none;background:'+C.bg+';color:'+C.green+';display:flex;align-items:center;justify-content:center;">'+icon("minus",14)+'</button><span style="width:24px;text-align:center;font-size:15px;font-weight:800;">'+f.count+'</span><button class="btn" data-action="af-inc" style="width:28px;height:28px;border-radius:7px;border:none;background:'+C.bg+';color:'+C.green+';display:flex;align-items:center;justify-content:center;">'+icon("plus",14)+'</button></div></div>';
   return card(label("手動新增勤務")+'<input data-input="af-name" value="'+esc(f.name)+'" placeholder="勤務名稱" style="width:100%;margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:14px;outline:none;" /><div style="display:flex;gap:6px;margin-top:9px;">'+seg+'</div><div style="display:flex;align-items:center;justify-content:space-between;margin-top:11px;"><button class="btn" data-action="af-keepall" style="display:flex;align-items:center;gap:7px;padding:7px 10px;border-radius:9px;border:1px solid '+(f.keepAll?C.green:C.line)+';background:'+(f.keepAll?C.greenSoft:C.surface)+';color:'+(f.keepAll?C.greenDeep:C.sub)+';font-size:12.5px;font-weight:600;"><span style="width:15px;height:15px;border-radius:5px;border:1.5px solid '+(f.keepAll?C.green:C.sub)+';background:'+(f.keepAll?C.green:"transparent")+';display:flex;align-items:center;justify-content:center;">'+(f.keepAll?icon("check",10,"#fff"):"")+'</span>八人一起</button>'+stepper+'</div><div style="display:flex;gap:8px;margin-top:12px;"><button class="btn" data-action="af-cancel" style="flex:1;padding:10px;border-radius:10px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:13.5px;">取消</button><button class="btn" data-action="af-add" style="flex:2;padding:10px;border-radius:10px;border:none;background:'+C.green+';color:#fff;font-weight:700;font-size:13.5px;">加入</button></div>',"margin-top:10px;");
 }
@@ -260,9 +323,10 @@ function commitBtn(){return '<button class="btn" data-action="commit" style="wid
 
 /* ---------- 統計 ---------- */
 function statsCard(p){
-  var h=HIST[p.id]||{},cats=Object.keys(h).filter(function(k){return h[k]>0;});
+  var h=HIST.h[p.id]||{},cats=Object.keys(h).filter(function(k){return h[k]>0;});
   var tot=cats.reduce(function(s,k){return s+h[k];},0);cats.sort(function(a,b){return h[b]-h[a];});
-  var seg=cats.map(function(k){return '<div style="width:'+(tot?(h[k]/tot*100):0)+'%;background:'+catColor(k)+';"></div>';}).join("");
+  var byG={};cats.forEach(function(k){var g=(HIST.cg[k]||deriveGroup(k));byG[g]=(byG[g]||0)+h[k];});
+  var seg=["打掃","公差","打飯"].filter(function(g){return byG[g];}).map(function(g){return '<div style="width:'+(tot?(byG[g]/tot*100):0)+'%;background:'+GCOLORS[g]+';"></div>';}).join("");
   var chips=cats.length?cats.map(function(k){return '<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:700;color:#fff;background:'+catColor(k)+';padding:3px 8px;border-radius:999px;">'+esc(k)+' '+h[k]+'</span>';}).join(""):'<span style="font-size:11.5px;color:'+C.sub+';">尚未排過</span>';
   return '<button class="btn tap" data-action="open-person" data-id="'+p.id+'" style="text-align:left;background:'+C.surface+';border:1px solid '+C.line+';border-radius:14px;padding:12px;"><div style="display:flex;align-items:center;gap:8px;">'+badge(p.code,22,"green")+'<span style="flex:1;min-width:0;font-size:14px;font-weight:800;color:'+C.ink+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(nameOf(p.id))+'</span></div><div style="margin-top:8px;display:flex;align-items:baseline;gap:3px;"><span style="font-size:22px;font-weight:800;color:'+C.greenDeep+';font-variant-numeric:tabular-nums;">'+tot+'</span><span style="font-size:11px;color:'+C.sub+';">次</span></div><div style="display:flex;height:7px;border-radius:4px;overflow:hidden;background:'+C.line+';margin-top:6px;">'+seg+'</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;">'+chips+'</div></button>';
 }
@@ -275,11 +339,29 @@ function daysBlock(){
   var rows=state.log.slice().sort(function(a,b){return b.id-a.id;}).map(function(e){return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid '+C.line+';border-radius:11px;margin-bottom:7px;background:'+C.surface+';"><div><span style="font-size:14px;font-weight:800;">'+esc(e.date)+'</span><span style="font-size:12px;color:'+C.sub+';margin-left:8px;">'+e.entries.length+' 人次</span></div><button class="btn" data-action="del-day" data-day="'+e.id+'" style="display:flex;align-items:center;gap:5px;border:none;background:transparent;color:'+C.red+';font-weight:700;font-size:12.5px;">'+icon("trash",14)+' 刪這天</button></div>';}).join("");
   return label("各天紀錄 · 可單獨刪除")+'<div style="margin-top:9px;">'+rows+'</div>';
 }
+function backupBlock(){
+  if(!state.backupOpen)return '<button class="btn" data-action="open-backup" style="width:100%;margin-top:10px;padding:11px;border-radius:11px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:12.5px;">備份／換手機還原</button>';
+  var code=JSON.stringify({v:3,names:state.names,log:state.log,mealQueue:state.mealQueue});
+  return card(label("備份碼（複製存起來或傳給隊友）")+'<textarea readonly onclick="this.select()" style="width:100%;height:80px;margin-top:9px;padding:11px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:11px;line-height:1.5;outline:none;resize:vertical;font-family:ui-monospace,Menlo,monospace;">'+esc(code)+'</textarea><button class="btn" data-action="copy-backup" style="width:100%;margin-top:8px;padding:11px;border-radius:10px;border:none;background:'+C.brass+';color:#fff;font-weight:700;font-size:13.5px;display:flex;align-items:center;justify-content:center;gap:6px;">'+icon("copy",15,"#fff")+' 複製備份碼</button>'
+    +'<div style="font-size:12px;font-weight:800;letter-spacing:1px;color:'+C.sub+';margin-top:14px;">還原（貼上備份碼，會覆蓋現有紀錄）</div><textarea data-input="restore" placeholder="貼上另一支手機複製出來的備份碼…" style="width:100%;height:70px;margin-top:9px;padding:11px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:11px;line-height:1.5;outline:none;resize:vertical;font-family:ui-monospace,Menlo,monospace;">'+esc(restoreText)+'</textarea><div style="display:flex;gap:8px;margin-top:8px;"><button class="btn" data-action="close-backup" style="flex:1;padding:11px;border-radius:10px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:13px;">收起</button><button class="btn" data-action="do-restore" style="flex:1;padding:11px;border-radius:10px;border:none;background:'+C.green+';color:#fff;font-weight:700;font-size:13px;">還原</button></div>'
+    ,"margin-top:10px;");
+}
+function syncBlock(){
+  if(!state.syncUrl&&!state.syncOpen)return '<button class="btn" data-action="open-sync" style="width:100%;margin-top:10px;padding:11px;border-radius:11px;border:1.5px dashed '+C.green+';background:transparent;color:'+C.green+';font-weight:700;font-size:12.5px;">☁ 設定雲端同步（多人共用同一份）</button>';
+  if(state.syncUrl&&!state.syncOpen){
+    var on=state.syncStatus==="on",er=state.syncStatus==="err";
+    var col=on?C.green:er?C.red:C.sub,txt=on?"已連線 · 每 20 秒自動同步":er?"連線異常，稍後重試":"連線中…";
+    return card('<div style="display:flex;align-items:center;gap:8px;"><span style="width:9px;height:9px;border-radius:999px;background:'+col+';"></span><span style="font-size:13px;font-weight:700;color:'+col+';">'+txt+'</span></div><div style="display:flex;gap:8px;margin-top:10px;"><button class="btn" data-action="pull-now" style="flex:1;padding:10px;border-radius:10px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.green+';font-weight:700;font-size:13px;">立即同步</button><button class="btn" data-action="open-sync" style="flex:1;padding:10px;border-radius:10px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:13px;">設定</button></div>',"margin-top:10px;");
+  }
+  var left=state.syncUrl?'<button class="btn" data-action="disconnect-sync" style="flex:1;padding:11px;border-radius:10px;border:1px solid '+C.redSoft+';background:'+C.redSoft+';color:'+C.red+';font-weight:700;font-size:13px;">中斷</button>':'<button class="btn" data-action="close-sync" style="flex:1;padding:11px;border-radius:10px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:13px;">取消</button>';
+  return card(label("雲端同步網址（Apps Script 的 /exec）")+'<div style="font-size:11.5px;color:'+C.sub+';margin-top:6px;">先在 Google 試算表建立 Apps Script 並部署成「任何人」，把 /exec 網址貼進來。全隊貼同一個網址＝共用同一份。</div><input data-input="syncurl" value="'+esc(syncInput||state.syncUrl)+'" placeholder="https://script.google.com/macros/s/.../exec" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:12px;outline:none;font-family:ui-monospace,Menlo,monospace;" /><div style="display:flex;gap:8px;margin-top:10px;">'+left+'<button class="btn" data-action="connect-sync" style="flex:2;padding:11px;border-radius:10px;border:none;background:'+C.green+';color:#fff;font-weight:700;font-size:13px;">連線並同步</button></div>',"margin-top:10px;");
+}
 function statsPage(){
   var grand=0;PEOPLE.forEach(function(p){grand+=total(p.id);});
   var grid='<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;align-items:start;margin-bottom:16px;">'+PEOPLE.map(statsCard).join("")+'</div>';
   var reset=!state.confirmReset?'<button class="btn" data-action="ask-reset" style="width:100%;margin-top:4px;padding:11px;border-radius:11px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.red+';font-weight:700;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px;">'+icon("rotate",14)+' 清空全部統計</button>':'<div style="display:flex;gap:8px;margin-top:4px;"><button class="btn" data-action="cancel-reset" style="flex:1;padding:11px;border-radius:11px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:12.5px;">取消</button><button class="btn" data-action="do-reset" style="flex:1;padding:11px;border-radius:11px;border:none;background:'+C.red+';color:#fff;font-weight:700;font-size:12.5px;">確定清空</button></div>';
-  return '<div style="font-size:12.5px;color:'+C.sub+';margin:0 2px 12px;">累積共 '+grand+' 人次。點卡片可改名字、扣單項或清空該人。</div>'+grid+importBlock()+daysBlock()+reset;
+  var legend='<div style="display:flex;gap:14px;margin:0 2px 12px;">'+["打掃","公差","打飯"].map(function(g){return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:'+C.ink+';"><span style="width:11px;height:11px;border-radius:3px;background:'+GCOLORS[g]+';"></span>'+g+'</span>';}).join("")+'</div>';
+  return '<div style="font-size:12.5px;color:'+C.sub+';margin:0 2px 8px;">累積共 '+grand+' 人次。點卡片可改名字、扣單項或清空該人。</div>'+legend+grid+syncBlock()+importBlock()+daysBlock()+backupBlock()+reset;
 }
 
 /* ---------- 底層面板（picker / person） ---------- */
@@ -307,7 +389,7 @@ function pickerInner(d){
     +'<div style="display:flex;gap:8px;margin-top:12px;"><button class="btn" data-action="del-duty" style="flex:0 0 auto;padding:13px 16px;border-radius:12px;border:1px solid '+C.redSoft+';background:'+C.redSoft+';color:'+C.red+';font-weight:700;font-size:14px;display:flex;align-items:center;gap:5px;">'+icon("trash",15)+' 移除</button><button class="btn" data-action="close-sheet" style="flex:1;padding:13px;border-radius:12px;border:none;background:'+C.green+';color:#fff;font-weight:800;font-size:15px;">完成</button></div>';
 }
 function personInner(id){
-  var h=HIST[id]||{},cats=Object.keys(h).filter(function(k){return h[k]>0;});cats.sort(function(a,b){return h[b]-h[a];});
+  var h=HIST.h[id]||{},cats=Object.keys(h).filter(function(k){return h[k]>0;});cats.sort(function(a,b){return h[b]-h[a];});
   var tot=cats.reduce(function(s,k){return s+h[k];},0);
   var rows=cats.length?cats.map(function(k){return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;"><span style="width:12px;height:12px;border-radius:4px;background:'+catColor(k)+';flex-shrink:0;"></span><span style="flex:1;font-size:14px;font-weight:600;">'+esc(k)+'</span><span style="font-size:14px;font-weight:800;color:'+C.greenDeep+';font-variant-numeric:tabular-nums;">×'+h[k]+'</span><button class="btn" data-action="ps-dec" data-id="'+id+'" data-cat="'+esc(k)+'" style="width:30px;height:30px;border-radius:8px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.red+';display:flex;align-items:center;justify-content:center;">'+icon("minus",15)+'</button></div>';}).join(""):'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:22px 0;">這個人還沒有紀錄。</div>';
   return handleBar()
@@ -339,7 +421,7 @@ function render(){
   navEl.innerHTML='<button data-action="go-board" class="'+(state.page==="board"?"on":"")+'">'+icon("board",20)+'排班</button><button data-action="go-stats" class="'+(state.page==="stats"?"on":"")+'">'+icon("chart",20)+'統計</button>';
   if(focusEl){var el=root.querySelector('[data-input="'+focusEl+'"]');if(el)el.focus();focusEl=null;}
 }
-function onInput(e){var t=e.target;if(!t.getAttribute)return;var k=t.getAttribute("data-input");if(!k)return;if(k==="paste")pasteText=t.value;else if(k==="import")importText=t.value;else if(k==="af-name")state.addForm.name=t.value;else if(k==="name"){state.names[t.getAttribute("data-id")]=t.value;persist();}}
+function onInput(e){var t=e.target;if(!t.getAttribute)return;var k=t.getAttribute("data-input");if(!k)return;if(k==="paste")pasteText=t.value;else if(k==="import")importText=t.value;else if(k==="restore")restoreText=t.value;else if(k==="syncurl")syncInput=t.value;else if(k==="af-name")state.addForm.name=t.value;else if(k==="name"){state.names[t.getAttribute("data-id")]=t.value;persist();}}
 root.addEventListener("input",onInput);overlay.addEventListener("input",onInput);
 
 function handle(a,el){
@@ -376,12 +458,23 @@ function handle(a,el){
   else if(a==="do-import"){var it=(importText||"").trim();if(!it){flash("先把公版貼進來");return;}var pr=parseFilled(importText);if(!pr.entries.length){flash("沒抓到我們的名字，確認公版已填好名字");return;}state.log.push({id:Date.now(),date:pr.date,entries:pr.entries});persist();state.importOpen=false;importText="";flash("已記錄 "+pr.date+"（"+pr.entries.length+" 人次）");render();}
   else if(a==="del-day"){var did=parseInt(day,10);state.log=state.log.filter(function(e){return e.id!==did;});persist();flash("已刪除該天紀錄");render();}
   else if(a==="ask-reset"){state.confirmReset=true;render();}
+  else if(a==="open-backup"){state.backupOpen=true;render();}
+  else if(a==="open-sync"){state.syncOpen=true;syncInput=state.syncUrl;render();}
+  else if(a==="close-sync"){state.syncOpen=false;render();}
+  else if(a==="connect-sync"){connectSync(syncInput||state.syncUrl);}
+  else if(a==="disconnect-sync"){disconnectSync();}
+  else if(a==="pull-now"){flash("同步中…");pullSync();}
+  else if(a==="close-backup"){state.backupOpen=false;restoreText="";render();}
+  else if(a==="copy-backup"){copyText(JSON.stringify({v:3,names:state.names,log:state.log,mealQueue:state.mealQueue}));}
+  else if(a==="do-restore"){var rt=(restoreText||"").trim();if(!rt){flash("先貼上備份碼");return;}try{var o=JSON.parse(rt);if(o.names)state.names=o.names;if(o.log)state.log=o.log;if(o.mealQueue&&o.mealQueue.length===8)state.mealQueue=o.mealQueue;persist();state.backupOpen=false;restoreText="";flash("已還原備份");render();}catch(err){flash("備份碼格式不對");}}
   else if(a==="cancel-reset"){state.confirmReset=false;render();}
   else if(a==="do-reset"){state.log=[];state.confirmReset=false;persist();flash("統計已全部清空");render();}
 }
 function onClick(e){var el=e.target.closest?e.target.closest("[data-action]"):null;if(el)handle(el.getAttribute("data-action"),el);}
 root.addEventListener("click",onClick);navEl.addEventListener("click",onClick);overlay.addEventListener("click",onClick);
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")pullSync();});
 render();
+if(state.syncUrl){state.syncStatus="sync";pullSync();startPoll();}
 </script>
 </body>
 </html>
