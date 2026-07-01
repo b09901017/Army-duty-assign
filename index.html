@@ -9,433 +9,379 @@
 <meta name="theme-color" content="#2A4634" />
 <title>261 排勤務板</title>
 <style>
-  html,body{margin:0;padding:0;background:#F1F3EE;-webkit-text-size-adjust:100%;}
-  #root{min-height:100vh;}
+  :root{--bg:#F1F3EE;--surface:#fff;--ink:#20261E;--sub:#6C7268;--line:#E3E5DC;--green:#3B6147;--green-deep:#2A4634;--green-soft:#E9EFE8;--brass:#A9793F;--brass-soft:#F5ECDB;--amber:#9A6B14;--amber-soft:#F7EFDB;--red:#B0453C;--red-soft:#F6E5E2;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--bg);-webkit-text-size-adjust:100%;}
+  body{font-family:system-ui,-apple-system,"Noto Sans TC","PingFang TC",sans-serif;color:var(--ink);}
+  button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+  input,textarea{font:inherit;}
+  svg{display:block;}
+  .wrap{max-width:600px;margin:0 auto;padding:16px 14px 96px;}
+  .btn{transition:transform .12s ease,background .2s ease,box-shadow .2s ease,border-color .2s ease;}
+  .btn:active{transform:translateY(1px) scale(.985);}
+  .tap:active{transform:scale(.96);}
+  *:focus-visible{outline:2px solid var(--brass);outline-offset:2px;}
+  .backdrop{position:fixed;inset:0;background:rgba(20,30,22,.42);display:flex;align-items:flex-end;justify-content:center;z-index:50;animation:fade .2s ease;}
+  .sheet{width:100%;max-width:600px;background:var(--surface);border-radius:20px 20px 0 0;padding:0 14px 22px;box-shadow:0 -8px 30px rgba(0,0,0,.18);animation:slide .28s cubic-bezier(.2,.8,.2,1);}
+  .toast{position:fixed;bottom:78px;left:50%;transform:translateX(-50%);background:var(--green-deep);color:#fff;padding:10px 18px;border-radius:999px;font-size:13.5px;font-weight:600;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:88vw;text-align:center;display:none;}
+  .toast.show{display:block;animation:fade .25s ease;}
+  .nav{position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.94);backdrop-filter:saturate(1.1) blur(8px);border-top:1px solid var(--line);display:flex;z-index:40;padding-bottom:env(safe-area-inset-bottom);}
+  .nav button{flex:1;border:none;background:transparent;padding:11px 0 13px;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11.5px;font-weight:700;color:var(--sub);}
+  .nav button.on{color:var(--green-deep);}
+  @keyframes slide{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
-<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body>
-<div id="root"></div>
+<div id="root" class="wrap"></div>
+<div id="overlay"></div>
+<div id="toast" class="toast"></div>
+<div id="nav" class="nav"></div>
 
-<script type="text/babel" data-presets="react">
-const { useState, useEffect, useRef } = React;
+<script>
+"use strict";
 
-/* ---------- 名冊（261梯，代號=本名） ---------- */
-const PEOPLE = [
-  { id: 1, code: "01", name: "李愷宸" },
-  { id: 2, code: "02", name: "江偉綸" },
-  { id: 3, code: "03", name: "陳柏翰" },
-  { id: 4, code: "04", name: "鄧旭辰" },
-  { id: 5, code: "05", name: "廖翊滕" },
-  { id: 6, code: "06", name: "陳俊穎" },
-  { id: 7, code: "07", name: "林柏宇" },
-  { id: 8, code: "08", name: "林崇浩" },
-];
-const PERIODS = [
-  { key: "AM", label: "上午", meal: "早打" },
-  { key: "NOON", label: "午", meal: "午打" },
-  { key: "PM", label: "晚", meal: "晚打" },
-];
-const C = {
-  bg: "#F1F3EE", surface: "#FFFFFF", ink: "#20261E", sub: "#6C7268", line: "#E3E5DC",
-  green: "#3B6147", greenDeep: "#2A4634", greenSoft: "#E9EFE8",
-  brass: "#A9793F", brassSoft: "#F5ECDB", amber: "#9A6B14", amberSoft: "#F7EFDB",
-  red: "#B0453C", redSoft: "#F6E5E2",
+var PEOPLE=[{id:1,code:"01",name:"李愷宸"},{id:2,code:"02",name:"江偉綸"},{id:3,code:"03",name:"陳柏翰"},{id:4,code:"04",name:"鄧旭辰"},{id:5,code:"05",name:"廖翊滕"},{id:6,code:"06",name:"陳俊穎"},{id:7,code:"07",name:"林柏宇"},{id:8,code:"08",name:"林崇浩"}];
+var ORDER=[1,2,3,4,5,6,7,8];
+var PERIODS=[{key:"AM",label:"上午",meal:"早"},{key:"NOON",label:"午",meal:"午"},{key:"PM",label:"晚",meal:"晚"}];
+var C={bg:"#F1F3EE",surface:"#fff",ink:"#20261E",sub:"#6C7268",line:"#E3E5DC",green:"#3B6147",greenDeep:"#2A4634",greenSoft:"#E9EFE8",brass:"#A9793F",brassSoft:"#F5ECDB",amber:"#9A6B14",amberSoft:"#F7EFDB",red:"#B0453C",redSoft:"#F6E5E2"};
+var PAL=["#3B6147","#4E6E8E","#8E5A6E","#6E7D3D","#B06A3C","#4C7D74","#7A6BA8","#997A2E","#A65A5A","#5B8C6E","#54708A","#8A6D3B","#6B5B95","#3F7D6E","#A34E5E","#5F8C3A","#7E6248","#4670A0","#9C5B7C","#4A8577"];
+var STORE_KEY="duty-board-v3";
+
+var ICON={plus:'<path d="M12 5v14"/><path d="M5 12h14"/>',minus:'<path d="M5 12h14"/>',x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',check:'<path d="M20 6 9 17l-5-5"/>',rotate:'<path d="M3 12a9 9 0 1 0 9-9 9.7 9.7 0 0 0-6.7 2.7L3 8"/><path d="M3 3v5h5"/>',copy:'<rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',wand:'<path d="M4 20 14 10"/><path d="m17 3 1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"/>',trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',board:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>',chart:'<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/>',lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'};
+function icon(n,s,c){s=s||18;c=c||"currentColor";return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="'+c+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+ICON[n]+'</svg>';}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
+function nameOf(id){return state.names[id];}
+function personByCode(pid){for(var i=0;i<PEOPLE.length;i++)if(PEOPLE[i].id===pid)return PEOPLE[i];return null;}
+function splitColon(line){var i=line.search(/[：:]/);if(i<0)return null;return {label:line.slice(0,i).trim(),colon:line[i],rhs:line.slice(i+1)};}
+function catColor(cat){if(cat==="打飯")return C.brass;var h=0;for(var i=0;i<cat.length;i++)h=(h*31+cat.charCodeAt(i))>>>0;return PAL[h%PAL.length];}
+function sum(o){var s=0;for(var k in o)s+=o[k];return s;}
+function todayLabel(){var d=new Date();return (d.getMonth()+1)+"/"+d.getDate();}
+function extractDate(t){var m=t.match(/(\d{1,2})\s*[\/月]\s*(\d{1,2})/);return m?(parseInt(m[1],10)+"/"+parseInt(m[2],10)):null;}
+function pord(p){return p==="AM"?0:p==="NOON"?1:2;}
+
+/* ---------- 狀態 ---------- */
+function loadSaved(){try{var r=localStorage.getItem(STORE_KEY);if(r)return JSON.parse(r);}catch(e){}return null;}
+var saved=loadSaved();
+function migrateLog(s){
+  if(!s)return [];
+  if(s.log)return s.log;
+  var entries=[];
+  if(s.history){for(var id in s.history){var h=s.history[id];for(var cat in h){for(var i=0;i<h[cat];i++)entries.push({p:parseInt(id,10),c:cat});}}}
+  else if(s.counts){for(var id2 in s.counts){for(var j=0;j<s.counts[id2];j++)entries.push({p:parseInt(id2,10),c:"先前紀錄"});}}
+  return entries.length?[{id:1,date:"先前",entries:entries}]:[];
+}
+var state={
+  names:(function(){var o={};PEOPLE.forEach(function(p){o[p.id]=p.name;});if(saved&&saved.names)for(var k in saved.names)o[k]=saved.names[k];return o;})(),
+  log:migrateLog(saved),
+  mealQueue:(function(){if(saved&&saved.mealQueue&&saved.mealQueue.length===8)return saved.mealQueue.slice();if(saved&&typeof saved.mealPtr==="number"){var p=((saved.mealPtr%8)+8)%8;return ORDER.slice(p).concat(ORDER.slice(0,p));}return ORDER.slice();})(),
+  available:(function(){var o={};PEOPLE.forEach(function(p){o[p.id]=true;});return o;})(),
+  gongban:{raw:"",meta:[],loaded:false},
+  duties:[],
+  sheet:null,
+  page:"board",
+  showPaste:false,showPreview:false,
+  addForm:{open:false,name:"",period:"AM",count:1,keepAll:false},
+  importOpen:false,confirmReset:false
 };
-const STORE_KEY = "duty-board-v1";
+var pasteText="",importText="";
+function persist(){try{localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue}));}catch(e){}}
 
-/* ---------- 內建 SVG 圖示 ---------- */
-const S = (p) => <svg width={p.size||18} height={p.size||18} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{p.children}</svg>;
-const Plus = (p) => <S {...p}><path d="M12 5v14"/><path d="M5 12h14"/></S>;
-const Minus = (p) => <S {...p}><path d="M5 12h14"/></S>;
-const X = (p) => <S {...p}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></S>;
-const Check = (p) => <S {...p}><path d="M20 6 9 17l-5-5"/></S>;
-const RotateCcw = (p) => <S {...p}><path d="M3 12a9 9 0 1 0 9-9 9.7 9.7 0 0 0-6.7 2.7L3 8"/><path d="M3 3v5h5"/></S>;
-const Copy = (p) => <S {...p}><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></S>;
-const Trash2 = (p) => <S {...p}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></S>;
-const Wand2 = (p) => <S {...p}><path d="M4 20 14 10"/><path d="m17 3 1 2.5L20.5 6.5 18 7.5 17 10l-1-2.5L13.5 6.5 16 5.5z"/></S>;
-const Settings2 = (p) => <S {...p}><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></S>;
-const AlertTriangle = (p) => <S {...p}><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></S>;
+var HIST={};
+function getHistory(){var h={};PEOPLE.forEach(function(p){h[p.id]={};});state.log.forEach(function(e){e.entries.forEach(function(x){if(!h[x.p])h[x.p]={};h[x.p][x.c]=(h[x.p][x.c]||0)+1;});});return h;}
+function refreshHist(){HIST=getHistory();}
+function total(id){return sum(HIST[id]||{});}
+function nonMealTotal(id){var h=HIST[id]||{},s=0;for(var k in h){if(k!=="打飯")s+=h[k];}return s;}
 
-const freshMeals = () =>
-  PERIODS.map((p) => ({ id: "m-" + p.key, name: p.meal, period: p.key, slots: 1, assigned: [], allTogether: false, fixed: true }));
+var toastT=null;
+function flash(m){var t=document.getElementById("toast");t.textContent=m;t.className="toast show";clearTimeout(toastT);toastT=setTimeout(function(){t.className="toast";},2200);}
 
-const CSS = `
-.db-btn{transition:transform .12s ease,background .2s ease,box-shadow .2s ease,border-color .2s ease;-webkit-tap-highlight-color:transparent;}
-.db-btn:active{transform:translateY(1px) scale(.985);}
-.db-tag{transition:background .15s ease,color .15s ease,border-color .15s ease,transform .12s ease;-webkit-tap-highlight-color:transparent;}
-.db-tag:active{transform:scale(.96);}
-.db-row{transition:background .15s ease;-webkit-tap-highlight-color:transparent;}
-.db-back{animation:dbfade .2s ease;}
-.db-sheet{animation:dbslide .28s cubic-bezier(.2,.8,.2,1);}
-.db-in{animation:dbfade .25s ease;}
-@keyframes dbslide{from{transform:translateY(100%)}to{transform:translateY(0)}}
-@keyframes dbfade{from{opacity:0}to{opacity:1}}
-*:focus-visible{outline:2px solid ${C.brass};outline-offset:2px;}
-input{font:inherit;}
-@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
-`;
+function blockOf(d){if(d.kind==="meal"){return d.label.indexOf("早")>=0?"AM":d.label.indexOf("午")>=0?"NOON":null;}return d.period;}
 
-function loadState() {
-  try { const raw = localStorage.getItem(STORE_KEY); if (raw) return JSON.parse(raw); } catch (e) {}
-  return null;
+/* ---------- 解析公版 ---------- */
+function parseGongban(text){
+  var lines=text.replace(/\r/g,"").split("\n"),section="",sub="AM",duties=[];
+  var meta=lines.map(function(raw,idx){
+    var line=raw,t=line.trim();
+    if(line.indexOf("🔷")>=0){section=line.indexOf("公差")>=0?"gongcha":line.indexOf("打飯")>=0?"meal":"clean";return {type:"static",text:raw};}
+    if(/^(上午|中午|下午|午|晚|晚間|晚上)$/.test(t)){sub=/上午/.test(t)?"AM":/(晚|下午)/.test(t)?"PM":"NOON";return {type:"static",text:raw};}
+    if(section==="gongcha")return {type:"static",text:raw};
+    var sc=splitColon(line);
+    if(sc){var mm=sc.label.match(/(早打|午打|晚打)/);if(mm){var per=mm[1]==="早打"?"AM":mm[1]==="午打"?"NOON":"PM";var dm={id:"d"+idx,kind:"meal",label:sc.label,period:per,count:1,assigned:[],keepAll:false,removed:false,original:raw};duties.push(dm);return {type:"duty",dutyId:dm.id};}}
+    if(/261/.test(line)&&sc){
+      var toks=sc.rhs.split("+").map(function(x){return x.trim();}),fi=-1,cnt=1,ot="261";
+      for(var i=0;i<toks.length;i++){var tm=toks[i].match(/^261\s*(?:\*\s*(\d+))?$/);if(tm){fi=i;cnt=tm[1]?parseInt(tm[1],10):1;ot=toks[i];break;}}
+      if(fi>=0){var df={id:"d"+idx,kind:"fill",label:sc.label,period:sub,count:cnt,assigned:[],keepAll:false,removed:false,original:raw,tokIdx:fi,origTok:ot};duties.push(df);return {type:"duty",dutyId:df.id};}
+    }
+    return {type:"static",text:raw};
+  });
+  return {meta:meta,duties:duties};
+}
+function dutyById(id){for(var i=0;i<state.duties.length;i++)if(state.duties[i].id===id)return state.duties[i];return null;}
+function rebuildLine(m){
+  if(m.type==="static")return m.text;
+  var d=dutyById(m.dutyId);if(!d)return "";
+  if(d.kind==="meal"){return (!d.removed&&d.assigned.length)?d.original.replace(/\s+$/,"")+" + "+d.assigned.map(nameOf).join(" + "):d.original;}
+  var sc=splitColon(d.original);if(!sc)return d.original;
+  var toks=sc.rhs.split("+").map(function(x){return x.trim();}),fi=d.tokIdx;
+  if(d.keepAll&&!d.removed)toks[fi]=d.origTok;
+  else if(!d.removed&&d.assigned.length)toks[fi]=d.assigned.map(nameOf).join("+");
+  else toks.splice(fi,1);
+  return sc.label+sc.colon+toks.join("+");
+}
+function buildFilled(){
+  var base=state.gongban.meta.map(rebuildLine).join("\n");
+  var extra=state.duties.filter(function(d){return d.kind==="manual"&&!d.removed&&(d.keepAll||d.assigned.length);}).map(function(d){return d.label+"："+(d.keepAll?"261":d.assigned.map(nameOf).join("+"));});
+  return base+(extra.length?"\n"+extra.join("\n"):"");
+}
+function parseFilled(text){
+  var lines=text.replace(/\r/g,"").split("\n"),dateLabel=extractDate(text)||todayLabel(),entries=[];
+  var nmeMap={};PEOPLE.forEach(function(p){nmeMap[state.names[p.id]]=p.id;});
+  lines.forEach(function(line){
+    if(line.indexOf("🔷")>=0)return;
+    var sc=splitColon(line);if(!sc)return;
+    var lb=sc.label.replace(/^[\(（]?\s*\d+\s*[\)）]?[\.、]?\s*/,"").trim();if(!lb)return;
+    var cat=/(早打|午打|晚打|打飯)/.test(lb)?"打飯":lb;
+    var toks=sc.rhs.split(/[+、,，\s]+/).map(function(x){return x.trim();}).filter(Boolean);
+    var allT=/八人一起|全班/.test(sc.rhs)||toks.some(function(x){return /^261(\*\d+)?$/.test(x);});
+    if(allT){PEOPLE.forEach(function(p){entries.push({p:p.id,c:cat});});}
+    else{toks.forEach(function(tk){if(Object.prototype.hasOwnProperty.call(nmeMap,tk))entries.push({p:nmeMap[tk],c:cat});});}
+  });
+  return {date:dateLabel,entries:entries};
 }
 
-function App() {
-  const [names, setNames] = useState(() => {
-    const s = loadState(); const base = Object.fromEntries(PEOPLE.map((p) => [p.id, p.name]));
-    return s && s.names ? { ...base, ...s.names } : base;
+/* ---------- 分配 ---------- */
+function computeConflicts(){
+  var seen={},res={};
+  state.duties.forEach(function(d){if(d.removed||d.keepAll)return;var b=blockOf(d);if(!b)return;d.assigned.forEach(function(pid){var k=b+":"+pid;seen[k]=(seen[k]||0)+1;});});
+  for(var k in seen){if(seen[k]>1)res[k]=true;}
+  return res;
+}
+function occupiesFor(duty){var B=blockOf(duty),o={};if(!B)return o;state.duties.forEach(function(x){if(x===duty||x.removed||x.keepAll)return;if(blockOf(x)!==B)return;x.assigned.forEach(function(pid){if(o[pid]===undefined)o[pid]=x.label;});});return o;}
+function autoAssign(){
+  refreshHist();
+  // 1) 打飯：輪流隊列，補休者保留順位、回來先輪到
+  var q=state.mealQueue.slice(),assignedToday={};
+  var meals=state.duties.filter(function(d){return d.kind==="meal"&&!d.removed;}).sort(function(a,b){return pord(a.period)-pord(b.period);});
+  meals.forEach(function(m){
+    var idx=-1;
+    for(var i=0;i<q.length;i++){var pid=q[i];if(state.available[pid]&&!assignedToday[pid]){idx=i;break;}}
+    if(idx<0){m.assigned=[];return;}
+    var pid=q[idx];m.assigned=[pid];assignedToday[pid]=true;q.splice(idx,1);q.push(pid);
   });
-  const [counts, setCounts] = useState(() => {
-    const s = loadState(); const base = Object.fromEntries(PEOPLE.map((p) => [p.id, 0]));
-    return s && s.counts ? { ...base, ...s.counts } : base;
+  // 2) 其他勤務：同一項做過最少的人優先，其次整體較少
+  var work={};PEOPLE.forEach(function(p){work[p.id]=nonMealTotal(p.id);});
+  var pset={AM:{},NOON:{},PM:{}};
+  state.duties.forEach(function(d){if(d.removed||d.keepAll)return;var b=blockOf(d);d.assigned.forEach(function(pid){if(d.kind!=="meal")work[pid]=(work[pid]||0)+1;if(b)pset[b][pid]=true;});});
+  var catWork={};
+  function cw(cat,pid){if(!catWork[cat])catWork[cat]={};if(catWork[cat][pid]===undefined)catWork[cat][pid]=(HIST[pid]&&HIST[pid][cat])||0;return catWork[cat][pid];}
+  state.duties.forEach(function(d){if(d.kind==="meal"||d.removed||d.keepAll)return;d.assigned.forEach(function(pid){catWork[d.label]=catWork[d.label]||{};catWork[d.label][pid]=cw(d.label,pid)+1;});});
+  var avail=PEOPLE.filter(function(p){return state.available[p.id];}),short=false;
+  state.duties.forEach(function(d){
+    if(d.kind==="meal"||d.removed||d.keepAll)return;
+    var b=blockOf(d),cat=d.label,need=d.count-d.assigned.length;
+    for(var i=0;i<need;i++){
+      var cand=avail.filter(function(p){if(d.assigned.indexOf(p.id)>=0)return false;if(b&&pset[b][p.id])return false;return true;});
+      if(!cand.length){short=true;break;}
+      cand.sort(function(a,c){return cw(cat,a.id)-cw(cat,c.id)||work[a.id]-work[c.id]||a.id-c.id;});
+      var pk=cand[0];d.assigned.push(pk.id);work[pk.id]++;catWork[cat]=catWork[cat]||{};catWork[cat][pk.id]=cw(cat,pk.id)+1;if(b)pset[b][pk.id]=true;
+    }
   });
-  const [available, setAvailable] = useState(() => Object.fromEntries(PEOPLE.map((p) => [p.id, true])));
-  const [duties, setDuties] = useState(freshMeals);
-  const [picker, setPicker] = useState(null);
-  const [tab, setTab] = useState("simpu");
-  const [panel, setPanel] = useState(false);
-  const [toast, setToast] = useState("");
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [add, setAdd] = useState({ open: false, name: "", period: "AM", slots: 1, allTogether: false });
-  const toastT = useRef(null);
-
-  useEffect(() => {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify({ names, counts })); } catch (e) {}
-  }, [names, counts]);
-
-  const flash = (m) => { setToast(m); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(""), 2200); };
-  const codeOf = (id) => PEOPLE.find((p) => p.id === id).code;
-
-  const toggleAssign = (dutyId, pid) =>
-    setDuties((prev) => prev.map((d) => {
-      if (d.id !== dutyId) return d;
-      const has = d.assigned.includes(pid);
-      return { ...d, assigned: has ? d.assigned.filter((x) => x !== pid) : [...d.assigned, pid] };
-    }));
-  const removeFromDuty = (dutyId, pid) =>
-    setDuties((prev) => prev.map((d) => (d.id === dutyId ? { ...d, assigned: d.assigned.filter((x) => x !== pid) } : d)));
-
-  const autoAssign = () =>
-    setDuties((prev) => {
-      const work = { ...counts };
-      prev.forEach((d) => { if (!d.allTogether) d.assigned.forEach((pid) => (work[pid] = (work[pid] || 0) + 1)); });
-      const pset = { AM: new Set(), NOON: new Set(), PM: new Set() };
-      prev.forEach((d) => d.assigned.forEach((pid) => pset[d.period].add(pid)));
-      const avail = PEOPLE.filter((p) => available[p.id]);
-      let short = false;
-      const next = prev.map((d) => {
-        if (d.allTogether) return d;
-        const need = d.slots - d.assigned.length;
-        if (need <= 0) return d;
-        const assigned = [...d.assigned];
-        for (let i = 0; i < need; i++) {
-          const cand = avail.filter((p) => !assigned.includes(p.id) && !pset[d.period].has(p.id));
-          if (!cand.length) { short = true; break; }
-          cand.sort((a, b) => (work[a.id] || 0) - (work[b.id] || 0) || a.id - b.id);
-          const pick = cand[0];
-          assigned.push(pick.id); work[pick.id] = (work[pick.id] || 0) + 1; pset[d.period].add(pick.id);
-        }
-        return { ...d, assigned };
-      });
-      flash(short ? "已分配，但有勤務人手不足" : "已依歷史次數公平分配");
-      return next;
-    });
-
-  const clearToday = () => setDuties((prev) => prev.map((d) => ({ ...d, assigned: [] })));
-
-  const commit = () => {
-    const delta = {};
-    duties.forEach((d) => { if (!d.allTogether) d.assigned.forEach((pid) => (delta[pid] = (delta[pid] || 0) + 1)); });
-    if (!Object.keys(delta).length) { flash("目前沒有可計入的分配"); return; }
-    setCounts((prev) => { const n = { ...prev }; Object.keys(delta).forEach((k) => (n[k] = (n[k] || 0) + delta[k])); return n; });
-    setDuties(freshMeals());
-    setAvailable(Object.fromEntries(PEOPLE.map((p) => [p.id, true])));
-    setAdd({ open: false, name: "", period: "AM", slots: 1, allTogether: false });
-    flash("已計入統計，今日已清空");
-  };
-
-  const addDuty = () => {
-    const name = add.name.trim();
-    if (!name) { flash("先幫勤務取個名字"); return; }
-    setDuties((prev) => [...prev, { id: "c-" + Date.now(), name, period: add.period, slots: add.allTogether ? 0 : Math.max(1, add.slots), assigned: [], allTogether: add.allTogether, fixed: false }]);
-    setAdd({ open: false, name: "", period: "AM", slots: 1, allTogether: false });
-  };
-
-  const conflict = {};
-  PERIODS.forEach((p) => {
-    const seen = {};
-    duties.filter((d) => d.period === p.key).forEach((d) => d.assigned.forEach((pid) => (seen[pid] = (seen[pid] || 0) + 1)));
-    Object.keys(seen).forEach((pid) => { if (seen[pid] > 1) conflict[p.key + ":" + pid] = true; });
+  flash(short?"已分配，但有時段人手不足":"已分配（打飯輪流·勤務均分）");render();
+}
+function commit(){
+  var entries=[];
+  state.duties.forEach(function(d){
+    if(d.removed)return;
+    if(d.keepAll){PEOPLE.forEach(function(p){entries.push({p:p.id,c:d.label});});}
+    else{var cat=d.kind==="meal"?"打飯":d.label;d.assigned.forEach(function(pid){entries.push({p:pid,c:cat});});}
   });
-  const conflictIdsInPeriod = (period) => new Set(Object.keys(conflict).filter((k) => k.startsWith(period + ":")).map((k) => +k.split(":")[1]));
+  if(!entries.length){flash("目前沒有可計入的分配");return;}
+  var date=extractDate(state.gongban.raw)||todayLabel();
+  state.log.push({id:Date.now(),date:date,entries:entries});
+  var mealPpl=state.duties.filter(function(d){return d.kind==="meal"&&!d.removed&&d.assigned.length;}).sort(function(a,b){return pord(a.period)-pord(b.period);}).map(function(d){return d.assigned[0];});
+  mealPpl.forEach(function(pid){var i=state.mealQueue.indexOf(pid);if(i>=0){state.mealQueue.splice(i,1);state.mealQueue.push(pid);}});
+  persist();
+  state.duties=[];state.gongban={raw:"",meta:[],loaded:false};state.showPaste=false;state.showPreview=false;pasteText="";
+  state.addForm={open:false,name:"",period:"AM",count:1,keepAll:false};
+  PEOPLE.forEach(function(p){state.available[p.id]=true;});
+  flash("已計入統計（"+date+"），今日已清空");render();
+}
+function copyText(text){if(!text)return;function ok(){flash("已複製");}function bad(){flash("複製失敗，請長按框內文字選取");}try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(ok,bad);else bad();}catch(e){bad();}}
+function removeOne(pid,cat){for(var i=state.log.length-1;i>=0;i--){var e=state.log[i];for(var j=0;j<e.entries.length;j++){if(e.entries[j].p===pid&&e.entries[j].c===cat){e.entries.splice(j,1);if(!e.entries.length)state.log.splice(i,1);return true;}}}return false;}
+function clearPerson(pid){for(var i=state.log.length-1;i>=0;i--){var e=state.log[i];e.entries=e.entries.filter(function(x){return x.p!==pid;});if(!e.entries.length)state.log.splice(i,1);}}
 
-  const buildSimpu = () => {
-    const out = [];
-    PERIODS.forEach((p) => {
-      const ds = duties.filter((d) => d.period === p.key && (d.allTogether || d.assigned.length));
-      if (!ds.length) return;
-      out.push(p.label);
-      ds.forEach((d) => { const label = d.fixed ? "打飯" : d.name; out.push(d.allTogether ? `${label} 八人一起` : `${label} ${d.assigned.map(codeOf).join(" ")}`); });
-      out.push("");
-    });
-    return out.join("\n").trim();
-  };
-  const buildRoster = () => {
-    const out = [];
-    PERIODS.forEach((p) => {
-      const ds = duties.filter((d) => d.period === p.key && (d.allTogether || d.assigned.length));
-      if (!ds.length) return;
-      out.push(`【${p.label}】`);
-      ds.forEach((d) => out.push(`${d.name}：${d.allTogether ? "八人一起（261）" : d.assigned.map((id) => names[id]).join("、")}`));
-      out.push("");
-    });
-    return out.join("\n").trim() || "還沒有分配";
-  };
-  const copy = (text) => {
-    if (!text) return;
-    try { navigator.clipboard.writeText(text).then(() => flash("已複製"), () => flash("複製失敗，請長按框內文字選取")); }
-    catch { flash("複製失敗，請長按框內文字選取"); }
-  };
+/* ---------- 片段 ---------- */
+function badge(code,size,tone){var bg=tone==="mute"?C.line:C.greenDeep,col=tone==="mute"?C.sub:"#fff";return '<span style="width:'+size+'px;height:'+size+'px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:'+bg+';color:'+col+';font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.5px;flex-shrink:0;">'+code+'</span>';}
+function card(inner,extra){return '<div style="background:'+C.surface+';border:1px solid '+C.line+';border-radius:16px;padding:15px;'+(extra||"")+'">'+inner+'</div>';}
+function label(t){return '<div style="font-size:12px;font-weight:800;letter-spacing:1px;color:'+C.sub+';">'+t+'</div>';}
+function header(){var d=new Date().toLocaleDateString("zh-TW",{month:"2-digit",day:"2-digit",weekday:"short"});var title=state.page==="board"?"排班板":"統計";return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><div style="width:36px;height:36px;border-radius:10px;background:'+C.greenDeep+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;">261</div><div><div style="font-size:18px;font-weight:800;">'+title+'</div><div style="font-size:12px;color:'+C.sub+';">'+d+' · 8 員</div></div></div>';}
 
-  const NumBadge = ({ code, size = 26, tone = "green" }) => (
-    <span style={{ width: size, height: size, borderRadius: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", background: tone === "green" ? C.greenDeep : C.line, color: tone === "green" ? "#fff" : C.sub, fontSize: 12, fontWeight: 700, fontVariantNumeric: "tabular-nums", flexShrink: 0, letterSpacing: 0.5 }}>{code}</span>
-  );
+function pasteCard(){
+  var showBox=!state.gongban.loaded||state.showPaste;
+  if(showBox){return card(label("貼上今天的公版")+'<textarea data-input="paste" placeholder="把班長給的整份公版貼進來，會自動抓出所有含 261 的勤務和打飯。" style="width:100%;height:120px;margin-top:10px;padding:12px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:13.5px;line-height:1.6;outline:none;resize:vertical;font-family:ui-monospace,Menlo,monospace;">'+esc(pasteText)+'</textarea><button class="btn" data-action="parse" style="width:100%;margin-top:10px;padding:13px;border-radius:11px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:15px;">解析勤務</button>');}
+  var n=state.duties.filter(function(d){return !d.removed;}).length;
+  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:'+C.greenSoft+';border:1px solid '+C.green+';border-radius:12px;padding:11px 14px;"><div style="display:flex;align-items:center;gap:8px;color:'+C.greenDeep+';font-weight:700;font-size:13.5px;">'+icon("check",16,C.green)+' 公版已載入 · '+n+' 項勤務</div><button class="btn" data-action="repaste" style="border:none;background:transparent;color:'+C.green+';font-weight:700;font-size:13px;text-decoration:underline;">重新貼上</button></div>';
+}
+function availCard(){var chips=PEOPLE.map(function(p){var on=state.available[p.id];return '<button class="btn tap" data-action="avail" data-id="'+p.id+'" style="display:flex;align-items:center;gap:5px;padding:5px 9px 5px 5px;border-radius:999px;border:1px solid '+(on?C.green:C.line)+';background:'+(on?C.greenSoft:C.surface)+';color:'+(on?C.greenDeep:C.sub)+';opacity:'+(on?1:0.6)+';">'+badge(p.code,20,on?"green":"mute")+'<span style="font-size:12.5px;font-weight:600;text-decoration:'+(on?"none":"line-through")+';">'+esc(nameOf(p.id))+'</span></button>';}).join("");return '<div style="margin-top:14px;">'+card(label("今日出勤 · 點掉＝補休／站哨")+'<div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;">'+chips+'</div>')+'</div>';}
+function mealCell(period){var d=null;state.duties.forEach(function(x){if(x.kind==="meal"&&x.period===period&&!x.removed)d=x;});var pl=PERIODS.filter(function(p){return p.key===period;})[0].meal;if(!d)return '<div style="flex:1;text-align:center;padding:11px 4px;border-radius:11px;background:'+C.bg+';color:'+C.sub+';"><div style="font-size:12px;font-weight:800;">'+pl+'</div><div style="font-size:12px;margin-top:4px;color:'+C.line+';">—</div></div>';var filled=d.assigned.length>0,who=filled?esc(nameOf(d.assigned[0])):"指派";return '<button class="btn" data-action="pick" data-duty="'+d.id+'" style="flex:1;text-align:center;padding:10px 4px;border-radius:11px;border:1px solid '+(filled?C.green:C.line)+';background:'+(filled?C.greenSoft:C.surface)+';"><div style="font-size:12px;font-weight:800;color:'+C.green+';">'+pl+'</div><div style="font-size:13.5px;font-weight:700;margin-top:4px;color:'+(filled?C.greenDeep:C.sub)+';">'+who+'</div></button>';}
+function mealsRow(){
+  var _q=state.mealQueue.slice(),_pk=[],_u={};for(var _i=0;_i<_q.length&&_pk.length<3;_i++){var _p=_q[_i];if(state.available[_p]&&!_u[_p]){_pk.push(personByCode(_p).code);_u[_p]=true;}}var nx=_pk.join("→")||"—";
+  return '<div style="margin-top:14px;">'+card(label("打飯（號碼輪流）")+'<div style="display:flex;gap:8px;margin-top:9px;">'+mealCell("AM")+mealCell("NOON")+mealCell("PM")+'</div><div style="font-size:11px;color:'+C.sub+';margin-top:8px;">輪序：接下來 '+nx+' 起（自動分配用，記到隔天）</div>')+'</div>';
+}
+function dutyRow(d,conf){
+  var b=blockOf(d),over=d.assigned.length>d.count,under=d.assigned.length<d.count,right;
+  if(d.keepAll)right='<span style="font-size:11.5px;font-weight:800;color:'+C.green+';background:'+C.greenSoft+';padding:3px 8px;border-radius:7px;">全班261</span>';
+  else{var sc=over?C.red:under?C.amber:C.green,sb=over?C.redSoft:under?C.amberSoft:C.greenSoft;right='<span style="font-size:11.5px;font-weight:800;color:'+sc+';background:'+sb+';padding:3px 8px;border-radius:7px;">'+d.assigned.length+'/'+d.count+'</span>';}
+  var who;
+  if(d.keepAll)who='<span style="font-size:12.5px;color:'+C.sub+';">八人一起</span>';
+  else if(d.assigned.length)who=d.assigned.map(function(pid){var bad=b&&conf[b+":"+pid];return '<span style="font-size:12.5px;font-weight:700;color:'+(bad?C.red:C.greenDeep)+';">'+esc(nameOf(pid))+'</span>';}).join('<span style="color:'+C.line+';">、</span>');
+  else who='<span style="font-size:12.5px;color:'+C.sub+';">點我指派</span>';
+  var tag=d.kind==="manual"?'<span style="font-size:10px;font-weight:700;color:'+C.brass+';background:'+C.brassSoft+';padding:1px 6px;border-radius:5px;margin-left:6px;">手動</span>':"";
+  return '<button class="btn" data-action="pick" data-duty="'+d.id+'" style="width:100%;display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;border:1px solid '+C.line+';background:'+C.surface+';margin-bottom:7px;text-align:left;"><span style="font-weight:800;color:'+C.ink+';flex-shrink:0;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;">'+esc(d.label)+tag+'</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+who+'</span>'+right+'</button>';
+}
+function dutyList(){
+  var items=state.duties.filter(function(d){return (d.kind==="fill"||d.kind==="manual")&&!d.removed;});
+  var conf=computeConflicts(),out="";
+  PERIODS.forEach(function(p){var ds=items.filter(function(d){return d.period===p.key;});if(!ds.length)return;out+='<div style="display:flex;align-items:center;gap:8px;margin:16px 4px 8px;"><span style="font-size:13px;font-weight:800;color:'+C.green+';letter-spacing:1px;">'+p.label+'</span><div style="flex:1;height:1px;background:'+C.line+';"></div></div>';ds.forEach(function(d){out+=dutyRow(d,conf);});});
+  out+=addDutyBlock();return out;
+}
+function addDutyBlock(){
+  var f=state.addForm;
+  if(!f.open)return '<button class="btn" data-action="open-add" style="width:100%;margin-top:10px;padding:11px;border-radius:12px;border:1.5px dashed '+C.line+';background:transparent;color:'+C.sub+';font-weight:700;font-size:13.5px;display:flex;align-items:center;justify-content:center;gap:6px;">'+icon("plus",15)+' 手動新增勤務</button>';
+  var seg=PERIODS.map(function(p){var on=f.period===p.key;return '<button class="btn" data-action="af-period" data-p="'+p.key+'" style="flex:1;padding:8px 0;border-radius:8px;font-size:12.5px;font-weight:700;border:1px solid '+(on?C.green:C.line)+';background:'+(on?C.greenSoft:C.surface)+';color:'+(on?C.greenDeep:C.sub)+';">'+p.label+'</button>';}).join("");
+  var stepper=f.keepAll?"":'<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12.5px;color:'+C.sub+';">人數</span><div style="display:flex;align-items:center;gap:2px;border:1px solid '+C.line+';border-radius:9px;padding:2px;"><button class="btn" data-action="af-dec" style="width:28px;height:28px;border-radius:7px;border:none;background:'+C.bg+';color:'+C.green+';display:flex;align-items:center;justify-content:center;">'+icon("minus",14)+'</button><span style="width:24px;text-align:center;font-size:15px;font-weight:800;">'+f.count+'</span><button class="btn" data-action="af-inc" style="width:28px;height:28px;border-radius:7px;border:none;background:'+C.bg+';color:'+C.green+';display:flex;align-items:center;justify-content:center;">'+icon("plus",14)+'</button></div></div>';
+  return card(label("手動新增勤務")+'<input data-input="af-name" value="'+esc(f.name)+'" placeholder="勤務名稱" style="width:100%;margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:14px;outline:none;" /><div style="display:flex;gap:6px;margin-top:9px;">'+seg+'</div><div style="display:flex;align-items:center;justify-content:space-between;margin-top:11px;"><button class="btn" data-action="af-keepall" style="display:flex;align-items:center;gap:7px;padding:7px 10px;border-radius:9px;border:1px solid '+(f.keepAll?C.green:C.line)+';background:'+(f.keepAll?C.greenSoft:C.surface)+';color:'+(f.keepAll?C.greenDeep:C.sub)+';font-size:12.5px;font-weight:600;"><span style="width:15px;height:15px;border-radius:5px;border:1.5px solid '+(f.keepAll?C.green:C.sub)+';background:'+(f.keepAll?C.green:"transparent")+';display:flex;align-items:center;justify-content:center;">'+(f.keepAll?icon("check",10,"#fff"):"")+'</span>八人一起</button>'+stepper+'</div><div style="display:flex;gap:8px;margin-top:12px;"><button class="btn" data-action="af-cancel" style="flex:1;padding:10px;border-radius:10px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:13.5px;">取消</button><button class="btn" data-action="af-add" style="flex:2;padding:10px;border-radius:10px;border:none;background:'+C.green+';color:#fff;font-weight:700;font-size:13.5px;">加入</button></div>',"margin-top:10px;");
+}
+function boardActions(){return '<div style="margin-top:18px;"><button class="btn" data-action="auto" style="width:100%;padding:14px;border-radius:14px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 6px 16px rgba(42,70,52,.22);">'+icon("wand",18,"#fff")+' 自動分配</button></div><button class="btn" data-action="copy-filled" style="width:100%;margin-top:8px;padding:14px;border-radius:14px;border:none;background:'+C.brass+';color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;gap:7px;">'+icon("copy",18,"#fff")+' 複製填好的公版</button><button class="btn" data-action="toggle-preview" style="width:100%;margin-top:8px;padding:9px;border:none;background:transparent;color:'+C.sub+';font-size:13px;font-weight:700;">'+(state.showPreview?"收起預覽 ▲":"預覽填好的公版 ▼")+'</button>';}
+function previewCard(){return card('<pre style="margin:0;font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;color:'+C.ink+';font-family:ui-monospace,Menlo,monospace;">'+esc(buildFilled())+'</pre>',"margin-top:2px;");}
+function commitBtn(){return '<button class="btn" data-action="commit" style="width:100%;margin-top:12px;padding:13px;border-radius:14px;border:1.5px solid '+C.green+';background:'+C.greenSoft+';color:'+C.greenDeep+';font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;gap:7px;">'+icon("check",17)+' 完成並計入統計（清空今日）</button>';}
 
-  const nextUpId = (() => {
-    const avail = PEOPLE.filter((p) => available[p.id]).sort((a, b) => (counts[a.id] || 0) - (counts[b.id] || 0) || a.id - b.id);
-    return avail.length ? avail[0].id : null;
-  })();
-
-  return (
-    <div style={{ minHeight: "100vh", background: C.bg, color: C.ink, fontFamily: "system-ui,-apple-system,'Noto Sans TC',sans-serif" }}>
-      <style>{CSS}</style>
-      <div style={{ maxWidth: 560, margin: "0 auto", padding: "18px 14px 120px" }}>
-
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 38, height: 38, borderRadius: 10, background: C.greenDeep, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 15, letterSpacing: 0.5 }}>261</div>
-            <div>
-              <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: 0.5 }}>排勤務板</div>
-              <div style={{ fontSize: 12, color: C.sub }}>{new Date().toLocaleDateString("zh-TW", { month: "2-digit", day: "2-digit", weekday: "short" })} · 8 員</div>
-            </div>
-          </div>
-          <button className="db-btn" onClick={() => setPanel((v) => !v)} style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${C.line}`, background: panel ? C.greenSoft : C.surface, color: C.green, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Settings2 size={18} /></button>
-        </div>
-
-        <Card>
-          <Label>今日出勤 · 點一下切換</Label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-            {PEOPLE.map((p) => {
-              const on = available[p.id];
-              return (
-                <button key={p.id} className="db-tag" onClick={() => setAvailable((a) => ({ ...a, [p.id]: !a[p.id] }))}
-                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px 6px 6px", borderRadius: 999, border: `1px solid ${on ? C.green : C.line}`, background: on ? C.greenSoft : C.surface, color: on ? C.greenDeep : C.sub, cursor: "pointer", opacity: on ? 1 : 0.62 }}>
-                  <NumBadge code={p.code} size={22} tone={on ? "green" : "mute"} />
-                  <span style={{ fontSize: 13, fontWeight: 600, textDecoration: on ? "none" : "line-through" }}>{names[p.id]}</span>
-                </button>
-              );
-            })}
-          </div>
-          <div style={{ fontSize: 11.5, color: C.sub, marginTop: 9 }}>劃掉的人＝補休／站哨，自動分配不會排到。</div>
-        </Card>
-
-        {PERIODS.map((p) => {
-          const ds = duties.filter((d) => d.period === p.key);
-          const conf = conflictIdsInPeriod(p.key);
-          return (
-            <div key={p.key} style={{ marginTop: 18 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 4px 8px" }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: C.green, letterSpacing: 1 }}>{p.label}</span>
-                <div style={{ flex: 1, height: 1, background: C.line }} />
-              </div>
-              {ds.map((d) => <DutyCard key={d.id} d={d} conf={conf} />)}
-            </div>
-          );
-        })}
-
-        {!add.open ? (
-          <button className="db-btn" onClick={() => setAdd((a) => ({ ...a, open: true }))} style={{ width: "100%", marginTop: 14, padding: 13, borderRadius: 14, border: `1.5px dashed ${C.green}`, background: "transparent", color: C.green, fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}><Plus size={17} /> 新增勤務</button>
-        ) : (
-          <Card style={{ marginTop: 14 }}>
-            <div className="db-in">
-              <Label>新增勤務</Label>
-              <input autoFocus value={add.name} onChange={(e) => setAdd((a) => ({ ...a, name: e.target.value }))} placeholder="勤務名稱（例：營部馬路、打冰桶、垃圾間）" style={{ width: "100%", boxSizing: "border-box", marginTop: 10, padding: "11px 12px", borderRadius: 10, border: `1px solid ${C.line}`, background: C.bg, fontSize: 14, outline: "none" }} />
-              <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-                {PERIODS.map((p) => (
-                  <button key={p.key} className="db-btn" onClick={() => setAdd((a) => ({ ...a, period: p.key }))} style={{ flex: 1, padding: "9px 0", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${add.period === p.key ? C.green : C.line}`, background: add.period === p.key ? C.greenSoft : C.surface, color: add.period === p.key ? C.greenDeep : C.sub }}>{p.label}</button>
-                ))}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
-                <button className="db-btn" onClick={() => setAdd((a) => ({ ...a, allTogether: !a.allTogether }))} style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 10px", borderRadius: 9, border: `1px solid ${add.allTogether ? C.green : C.line}`, background: add.allTogether ? C.greenSoft : C.surface, color: add.allTogether ? C.greenDeep : C.sub, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                  <span style={{ width: 16, height: 16, borderRadius: 5, border: `1.5px solid ${add.allTogether ? C.green : C.sub}`, background: add.allTogether ? C.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>{add.allTogether && <Check size={11} color="#fff" />}</span>
-                  八人一起（寫261）
-                </button>
-                {!add.allTogether && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, color: C.sub }}>人數</span>
-                    <Stepper value={add.slots} set={(v) => setAdd((a) => ({ ...a, slots: v }))} />
-                  </div>
-                )}
-              </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                <button className="db-btn" onClick={() => setAdd({ open: false, name: "", period: "AM", slots: 1, allTogether: false })} style={{ flex: 1, padding: 11, borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, color: C.sub, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>取消</button>
-                <button className="db-btn" onClick={addDuty} style={{ flex: 2, padding: 11, borderRadius: 10, border: "none", background: C.green, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>加入勤務</button>
-              </div>
-            </div>
-          </Card>
-        )}
-
-        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
-          <button className="db-btn" onClick={autoAssign} style={{ flex: 2, padding: 14, borderRadius: 14, border: "none", background: C.greenDeep, color: "#fff", fontWeight: 800, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, cursor: "pointer", boxShadow: "0 6px 16px rgba(42,70,52,.22)" }}><Wand2 size={18} /> 自動公平分配</button>
-          <button className="db-btn" onClick={clearToday} style={{ flex: 1, padding: 14, borderRadius: 14, border: `1px solid ${C.line}`, background: C.surface, color: C.sub, fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}><RotateCcw size={16} /> 清除</button>
-        </div>
-
-        <Card style={{ marginTop: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <Label>輸出</Label>
-            <div style={{ display: "flex", background: C.bg, borderRadius: 9, padding: 3 }}>
-              {[["simpu", "簡打"], ["roster", "名單"]].map(([k, l]) => (
-                <button key={k} className="db-btn" onClick={() => setTab(k)} style={{ padding: "6px 14px", borderRadius: 7, fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer", background: tab === k ? C.surface : "transparent", color: tab === k ? C.greenDeep : C.sub, boxShadow: tab === k ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{l}</button>
-              ))}
-            </div>
-          </div>
-          <pre style={{ margin: "10px 0 0", padding: 14, borderRadius: 11, background: C.bg, border: `1px solid ${C.line}`, fontSize: 13.5, lineHeight: 1.7, color: C.ink, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "ui-monospace,'SF Mono',Menlo,monospace", minHeight: 44 }}>
-            {tab === "simpu" ? (buildSimpu() || "還沒有分配，先擺勤務並指派人員") : buildRoster()}
-          </pre>
-          <button className="db-btn" onClick={() => copy(tab === "simpu" ? buildSimpu() : buildRoster())} style={{ width: "100%", marginTop: 10, padding: 12, borderRadius: 11, border: "none", background: C.brass, color: "#fff", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, cursor: "pointer" }}><Copy size={16} /> 複製{tab === "simpu" ? "簡打" : "名單"}</button>
-          {tab === "simpu" && <div style={{ fontSize: 11.5, color: C.sub, marginTop: 9 }}>把「簡打」貼進 Claude 專案＋當天公版，就會填出整份傳班長的版本。</div>}
-        </Card>
-
-        <button className="db-btn" onClick={commit} style={{ width: "100%", marginTop: 12, padding: 14, borderRadius: 14, border: `1.5px solid ${C.green}`, background: C.greenSoft, color: C.greenDeep, fontWeight: 800, fontSize: 14.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, cursor: "pointer" }}><Check size={18} /> 完成並計入統計（清空今日）</button>
-
-        {panel && (
-          <Card style={{ marginTop: 18 }}>
-            <div className="db-in">
-              <Label>累積統計 · 次數少的優先輪</Label>
-              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 2 }}>
-                {[...PEOPLE].sort((a, b) => (counts[a.id] || 0) - (counts[b.id] || 0) || a.id - b.id).map((p) => {
-                  const c = counts[p.id] || 0;
-                  const max = Math.max(1, ...PEOPLE.map((x) => counts[x.id] || 0));
-                  const up = p.id === nextUpId;
-                  return (
-                    <div key={p.id} className="db-row" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px", borderRadius: 9, background: up ? C.brassSoft : "transparent" }}>
-                      <NumBadge code={p.code} size={24} />
-                      <input value={names[p.id]} onChange={(e) => setNames((n) => ({ ...n, [p.id]: e.target.value }))} style={{ flex: "0 0 auto", width: 74, border: "none", background: "transparent", fontSize: 14, fontWeight: 600, color: C.ink, outline: "none", padding: 0 }} />
-                      <div style={{ flex: 1, height: 7, borderRadius: 4, background: C.line, overflow: "hidden" }}><div style={{ width: `${(c / max) * 100}%`, height: "100%", background: C.green, borderRadius: 4, transition: "width .3s ease" }} /></div>
-                      {up && <span style={{ fontSize: 10.5, fontWeight: 800, color: C.brass }}>接下來</span>}
-                      <span style={{ width: 26, textAlign: "right", fontSize: 14, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: C.greenDeep }}>{c}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ fontSize: 11.5, color: C.sub, margin: "10px 2px 0" }}>名字可直接點開修改。數字＝累積被排到的次數，關掉重開都記得。</div>
-              {!confirmReset ? (
-                <button className="db-btn" onClick={() => setConfirmReset(true)} style={{ width: "100%", marginTop: 12, padding: 11, borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, color: C.red, fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}><RotateCcw size={15} /> 重設所有統計歸零</button>
-              ) : (
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  <button className="db-btn" onClick={() => setConfirmReset(false)} style={{ flex: 1, padding: 11, borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, color: C.sub, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>取消</button>
-                  <button className="db-btn" onClick={() => { setCounts(Object.fromEntries(PEOPLE.map((p) => [p.id, 0]))); setConfirmReset(false); flash("統計已歸零"); }} style={{ flex: 1, padding: 11, borderRadius: 10, border: "none", background: C.red, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>確定歸零</button>
-                </div>
-              )}
-            </div>
-          </Card>
-        )}
-      </div>
-
-      {picker && (() => {
-        const d = duties.find((x) => x.id === picker);
-        if (!d) return null;
-        const over = d.assigned.length > d.slots;
-        return (
-          <div className="db-back" onClick={() => setPicker(null)} style={{ position: "fixed", inset: 0, background: "rgba(20,30,22,.42)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50 }}>
-            <div className="db-sheet" onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, background: C.surface, borderRadius: "20px 20px 0 0", padding: "8px 14px 22px", boxShadow: "0 -8px 30px rgba(0,0,0,.18)" }}>
-              <div style={{ width: 40, height: 4, borderRadius: 2, background: C.line, margin: "6px auto 12px" }} />
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                <div style={{ fontSize: 16, fontWeight: 800 }}>{d.name}</div>
-                <div style={{ fontSize: 12.5, color: over ? C.red : C.sub, fontWeight: 700 }}>{d.assigned.length} / {d.slots} 人</div>
-              </div>
-              <div style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>點名字加入或移除，次數少的排在前面。</div>
-              <div style={{ maxHeight: "48vh", overflowY: "auto" }}>
-                {[...PEOPLE].sort((a, b) => (counts[a.id] || 0) - (counts[b.id] || 0) || a.id - b.id).map((p) => {
-                  const on = d.assigned.includes(p.id);
-                  const off = !available[p.id];
-                  return (
-                    <button key={p.id} className="db-row" disabled={off} onClick={() => toggleAssign(d.id, p.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "11px 8px", borderRadius: 11, border: "none", background: on ? C.greenSoft : "transparent", cursor: off ? "not-allowed" : "pointer", opacity: off ? 0.45 : 1, textAlign: "left" }}>
-                      <NumBadge code={p.code} size={30} tone={on ? "green" : "mute"} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{names[p.id]}</div>
-                        <div style={{ fontSize: 11.5, color: C.sub }}>{off ? "今日補休／站哨" : `累積 ${counts[p.id] || 0} 次`}</div>
-                      </div>
-                      <span style={{ width: 24, height: 24, borderRadius: 999, border: `2px solid ${on ? C.green : C.line}`, background: on ? C.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>{on && <Check size={14} color="#fff" />}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <button className="db-btn" onClick={() => setPicker(null)} style={{ width: "100%", marginTop: 12, padding: 13, borderRadius: 12, border: "none", background: C.green, color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>完成</button>
-            </div>
-          </div>
-        );
-      })()}
-
-      {toast && <div className="db-in" style={{ position: "fixed", bottom: 22, left: "50%", transform: "translateX(-50%)", background: C.greenDeep, color: "#fff", padding: "10px 18px", borderRadius: 999, fontSize: 13.5, fontWeight: 600, zIndex: 60, boxShadow: "0 6px 20px rgba(0,0,0,.25)", maxWidth: "88vw", textAlign: "center" }}>{toast}</div>}
-    </div>
-  );
-
-  function Card({ children, style }) { return <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 16, padding: 15, ...style }}>{children}</div>; }
-  function Label({ children }) { return <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, color: C.sub }}>{children}</div>; }
-  function Stepper({ value, set }) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 2, border: `1px solid ${C.line}`, borderRadius: 9, padding: 2 }}>
-        <button className="db-btn" onClick={() => set(Math.max(1, value - 1))} style={{ width: 30, height: 30, borderRadius: 7, border: "none", background: C.bg, color: C.green, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Minus size={15} /></button>
-        <span style={{ width: 26, textAlign: "center", fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{value}</span>
-        <button className="db-btn" onClick={() => set(Math.min(8, value + 1))} style={{ width: 30, height: 30, borderRadius: 7, border: "none", background: C.bg, color: C.green, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Plus size={15} /></button>
-      </div>
-    );
-  }
-  function DutyCard({ d, conf }) {
-    const under = !d.allTogether && d.assigned.length < d.slots;
-    const over = !d.allTogether && d.assigned.length > d.slots;
-    const statusColor = over ? C.red : under ? C.amber : C.green;
-    const statusBg = over ? C.redSoft : under ? C.amberSoft : C.greenSoft;
-    return (
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 13, marginBottom: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-            <span style={{ fontSize: 15, fontWeight: 800, color: C.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.name}</span>
-            {d.fixed && <span style={{ fontSize: 10.5, fontWeight: 700, color: C.brass, background: C.brassSoft, padding: "2px 7px", borderRadius: 6, flexShrink: 0 }}>固定</span>}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-            {!d.allTogether && <span style={{ fontSize: 11.5, fontWeight: 800, color: statusColor, background: statusBg, padding: "3px 8px", borderRadius: 7 }}>{d.assigned.length}/{d.slots}</span>}
-            {d.allTogether && <span style={{ fontSize: 11.5, fontWeight: 800, color: C.green, background: C.greenSoft, padding: "3px 8px", borderRadius: 7 }}>全班261</span>}
-            {!d.fixed && <button className="db-btn" onClick={() => setDuties((prev) => prev.filter((x) => x.id !== d.id))} style={{ width: 28, height: 28, borderRadius: 7, border: "none", background: "transparent", color: C.sub, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Trash2 size={15} /></button>}
-          </div>
-        </div>
-        {!d.allTogether && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-            {d.assigned.map((pid) => {
-              const bad = conf.has(pid);
-              return (
-                <span key={pid} className="db-tag" style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 5px 5px 8px", borderRadius: 999, background: bad ? C.redSoft : C.greenSoft, border: `1px solid ${bad ? C.red : "transparent"}` }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: bad ? C.red : C.greenDeep }}>{names[pid]}</span>
-                  <button onClick={() => removeFromDuty(d.id, pid)} style={{ width: 18, height: 18, borderRadius: 999, border: "none", background: "rgba(0,0,0,.06)", color: C.sub, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}><X size={11} /></button>
-                </span>
-              );
-            })}
-            <button className="db-btn" onClick={() => setPicker(d.id)} style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 12px", borderRadius: 999, border: `1px dashed ${C.green}`, background: "transparent", color: C.green, fontSize: 13, fontWeight: 700, cursor: "pointer" }}><Plus size={14} /> 指派</button>
-          </div>
-        )}
-        {!d.allTogether && d.assigned.some((pid) => conf.has(pid)) && (
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 8, fontSize: 11.5, color: C.red, fontWeight: 600 }}><AlertTriangle size={13} /> 標紅的人這個時段被排了兩件事</div>
-        )}
-      </div>
-    );
-  }
+/* ---------- 統計 ---------- */
+function statsCard(p){
+  var h=HIST[p.id]||{},cats=Object.keys(h).filter(function(k){return h[k]>0;});
+  var tot=cats.reduce(function(s,k){return s+h[k];},0);cats.sort(function(a,b){return h[b]-h[a];});
+  var seg=cats.map(function(k){return '<div style="width:'+(tot?(h[k]/tot*100):0)+'%;background:'+catColor(k)+';"></div>';}).join("");
+  var chips=cats.length?cats.map(function(k){return '<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:700;color:#fff;background:'+catColor(k)+';padding:3px 8px;border-radius:999px;">'+esc(k)+' '+h[k]+'</span>';}).join(""):'<span style="font-size:11.5px;color:'+C.sub+';">尚未排過</span>';
+  return '<button class="btn tap" data-action="open-person" data-id="'+p.id+'" style="text-align:left;background:'+C.surface+';border:1px solid '+C.line+';border-radius:14px;padding:12px;"><div style="display:flex;align-items:center;gap:8px;">'+badge(p.code,22,"green")+'<span style="flex:1;min-width:0;font-size:14px;font-weight:800;color:'+C.ink+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(nameOf(p.id))+'</span></div><div style="margin-top:8px;display:flex;align-items:baseline;gap:3px;"><span style="font-size:22px;font-weight:800;color:'+C.greenDeep+';font-variant-numeric:tabular-nums;">'+tot+'</span><span style="font-size:11px;color:'+C.sub+';">次</span></div><div style="display:flex;height:7px;border-radius:4px;overflow:hidden;background:'+C.line+';margin-top:6px;">'+seg+'</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;">'+chips+'</div></button>';
+}
+function importBlock(){
+  if(!state.importOpen)return '<button class="btn" data-action="open-import" style="width:100%;padding:12px;border-radius:12px;border:1.5px dashed '+C.green+';background:transparent;color:'+C.green+';font-weight:700;font-size:13.5px;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px;">'+icon("plus",15)+' 貼上已填好的公版來記錄</button>';
+  return card(label("貼上已填好名字的公版")+'<div style="font-size:11.5px;color:'+C.sub+';margin-top:6px;">會找出裡面我們 8 個人的名字，照勤務名稱記一次（打飯算一類、公差也會記），日期自動抓公版上的。</div><textarea data-input="import" placeholder="貼上已經填好我們名字的整份公版…" style="width:100%;height:110px;margin-top:10px;padding:12px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:13px;line-height:1.6;outline:none;resize:vertical;font-family:ui-monospace,Menlo,monospace;">'+esc(importText)+'</textarea><div style="display:flex;gap:8px;margin-top:10px;"><button class="btn" data-action="cancel-import" style="flex:1;padding:11px;border-radius:10px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:13.5px;">取消</button><button class="btn" data-action="do-import" style="flex:2;padding:11px;border-radius:10px;border:none;background:'+C.green+';color:#fff;font-weight:700;font-size:13.5px;">解析並記錄</button></div>',"margin-bottom:10px;");
+}
+function daysBlock(){
+  if(!state.log.length)return '';
+  var rows=state.log.slice().sort(function(a,b){return b.id-a.id;}).map(function(e){return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid '+C.line+';border-radius:11px;margin-bottom:7px;background:'+C.surface+';"><div><span style="font-size:14px;font-weight:800;">'+esc(e.date)+'</span><span style="font-size:12px;color:'+C.sub+';margin-left:8px;">'+e.entries.length+' 人次</span></div><button class="btn" data-action="del-day" data-day="'+e.id+'" style="display:flex;align-items:center;gap:5px;border:none;background:transparent;color:'+C.red+';font-weight:700;font-size:12.5px;">'+icon("trash",14)+' 刪這天</button></div>';}).join("");
+  return label("各天紀錄 · 可單獨刪除")+'<div style="margin-top:9px;">'+rows+'</div>';
+}
+function statsPage(){
+  var grand=0;PEOPLE.forEach(function(p){grand+=total(p.id);});
+  var grid='<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;align-items:start;margin-bottom:16px;">'+PEOPLE.map(statsCard).join("")+'</div>';
+  var reset=!state.confirmReset?'<button class="btn" data-action="ask-reset" style="width:100%;margin-top:4px;padding:11px;border-radius:11px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.red+';font-weight:700;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px;">'+icon("rotate",14)+' 清空全部統計</button>':'<div style="display:flex;gap:8px;margin-top:4px;"><button class="btn" data-action="cancel-reset" style="flex:1;padding:11px;border-radius:11px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:12.5px;">取消</button><button class="btn" data-action="do-reset" style="flex:1;padding:11px;border-radius:11px;border:none;background:'+C.red+';color:#fff;font-weight:700;font-size:12.5px;">確定清空</button></div>';
+  return '<div style="font-size:12.5px;color:'+C.sub+';margin:0 2px 12px;">累積共 '+grand+' 人次。點卡片可改名字、扣單項或清空該人。</div>'+grid+importBlock()+daysBlock()+reset;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+/* ---------- 底層面板（picker / person） ---------- */
+var overlay=document.getElementById("overlay");
+function handleBar(){return '<div data-drag="1" style="padding:9px 0 11px;cursor:grab;touch-action:none;"><div style="width:40px;height:4px;border-radius:2px;background:'+C.line+';margin:0 auto;"></div></div>';}
+function xBtn(){return '<button class="btn" data-action="close-sheet" style="width:30px;height:30px;border-radius:8px;border:none;background:'+C.bg+';color:'+C.sub+';display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+icon("x",16)+'</button>';}
+function currentDuty(){return (state.sheet&&state.sheet.type==="picker")?dutyById(state.sheet.id):null;}
+function pickerInner(d){
+  var occ=occupiesFor(d),B=blockOf(d),over=!d.keepAll&&d.assigned.length>d.count;
+  var ctrl="";
+  if(d.kind!=="meal"){
+    var stepper=d.keepAll?"":'<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:12.5px;color:'+C.sub+';">人數</span><div style="display:flex;align-items:center;gap:2px;border:1px solid '+C.line+';border-radius:9px;padding:2px;"><button class="btn" data-action="count-dec" style="width:28px;height:28px;border-radius:7px;border:none;background:'+C.bg+';color:'+C.green+';display:flex;align-items:center;justify-content:center;">'+icon("minus",14)+'</button><span style="width:22px;text-align:center;font-size:15px;font-weight:800;">'+d.count+'</span><button class="btn" data-action="count-inc" style="width:28px;height:28px;border-radius:7px;border:none;background:'+C.bg+';color:'+C.green+';display:flex;align-items:center;justify-content:center;">'+icon("plus",14)+'</button></div></div>';
+    var keep='<button class="btn" data-action="toggle-keepall" style="display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:9px;border:1px solid '+(d.keepAll?C.green:C.line)+';background:'+(d.keepAll?C.greenSoft:C.surface)+';color:'+(d.keepAll?C.greenDeep:C.sub)+';font-size:12.5px;font-weight:600;"><span style="width:15px;height:15px;border-radius:5px;border:1.5px solid '+(d.keepAll?C.green:C.sub)+';background:'+(d.keepAll?C.green:"transparent")+';display:flex;align-items:center;justify-content:center;">'+(d.keepAll?icon("check",10,"#fff"):"")+'</span>八人一起</button>';
+    ctrl='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">'+stepper+keep+'</div>';
+  }
+  var list=d.keepAll?'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:24px 0;">這項會保留成「261」，不用選人。</div>':PEOPLE.slice().sort(function(a,b){return total(a.id)-total(b.id)||a.id-b.id;}).map(function(p){
+    var on=d.assigned.indexOf(p.id)>=0,off=!state.available[p.id],blocked=(!on)&&(occ[p.id]!==undefined),dis=off||blocked;
+    var subT=off?"今日補休／站哨":blocked?("同時段已排："+occ[p.id]):("累積 "+total(p.id)+" 次"),subCol=off?C.red:blocked?C.amber:C.sub;
+    return '<button '+(dis?"disabled":'data-action="pick-toggle" data-pid="'+p.id+'"')+' style="width:100%;display:flex;align-items:center;gap:11px;padding:11px 8px;border-radius:11px;border:none;background:'+(on?C.greenSoft:"transparent")+';opacity:'+(dis?0.42:1)+';text-align:left;'+(dis?"cursor:not-allowed;":"")+'">'+badge(p.code,30,on?"green":"mute")+'<div style="flex:1;"><div style="font-size:15px;font-weight:700;color:'+C.ink+';display:flex;align-items:center;gap:5px;">'+esc(nameOf(p.id))+(blocked?icon("lock",12,C.amber):"")+'</div><div style="font-size:11.5px;color:'+subCol+';">'+subT+'</div></div><span style="width:24px;height:24px;border-radius:999px;border:2px solid '+(on?C.green:C.line)+';background:'+(on?C.green:"transparent")+';display:flex;align-items:center;justify-content:center;">'+(on?icon("check",14,"#fff"):"")+'</span></button>';
+  }).join("");
+  var blockNote=B?('<div style="font-size:11px;color:'+C.sub+';margin:0 0 8px;">同一時段（'+(B==="AM"?"上午":B==="NOON"?"中午":"晚間")+'）已排的人會鎖住。</div>'):"";
+  return handleBar()
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;"><div style="font-size:16px;font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(d.label)+'</div><div style="display:flex;align-items:center;gap:8px;">'+(d.keepAll?"":'<span style="font-size:12.5px;color:'+(over?C.red:C.sub)+';font-weight:700;">'+d.assigned.length+'/'+d.count+'</span>')+xBtn()+'</div></div>'
+    +blockNote+ctrl+'<div class="sheet-list" style="max-height:42vh;overflow-y:auto;">'+list+'</div>'
+    +'<div style="display:flex;gap:8px;margin-top:12px;"><button class="btn" data-action="del-duty" style="flex:0 0 auto;padding:13px 16px;border-radius:12px;border:1px solid '+C.redSoft+';background:'+C.redSoft+';color:'+C.red+';font-weight:700;font-size:14px;display:flex;align-items:center;gap:5px;">'+icon("trash",15)+' 移除</button><button class="btn" data-action="close-sheet" style="flex:1;padding:13px;border-radius:12px;border:none;background:'+C.green+';color:#fff;font-weight:800;font-size:15px;">完成</button></div>';
+}
+function personInner(id){
+  var h=HIST[id]||{},cats=Object.keys(h).filter(function(k){return h[k]>0;});cats.sort(function(a,b){return h[b]-h[a];});
+  var tot=cats.reduce(function(s,k){return s+h[k];},0);
+  var rows=cats.length?cats.map(function(k){return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;"><span style="width:12px;height:12px;border-radius:4px;background:'+catColor(k)+';flex-shrink:0;"></span><span style="flex:1;font-size:14px;font-weight:600;">'+esc(k)+'</span><span style="font-size:14px;font-weight:800;color:'+C.greenDeep+';font-variant-numeric:tabular-nums;">×'+h[k]+'</span><button class="btn" data-action="ps-dec" data-id="'+id+'" data-cat="'+esc(k)+'" style="width:30px;height:30px;border-radius:8px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.red+';display:flex;align-items:center;justify-content:center;">'+icon("minus",15)+'</button></div>';}).join(""):'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:22px 0;">這個人還沒有紀錄。</div>';
+  return handleBar()
+    +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;">'+badge(personByCode(id).code,28,"green")+'<input data-input="name" data-id="'+id+'" value="'+esc(nameOf(id))+'" style="flex:1;min-width:0;border:none;background:transparent;font-size:16px;font-weight:800;color:'+C.ink+';outline:none;padding:0;" />'+xBtn()+'</div>'
+    +'<div style="display:flex;align-items:baseline;gap:4px;margin:0 4px 6px;"><span style="font-size:24px;font-weight:800;color:'+C.greenDeep+';">'+tot+'</span><span style="font-size:12px;color:'+C.sub+';">次總計</span></div>'
+    +'<div class="sheet-list" style="max-height:40vh;overflow-y:auto;">'+rows+'</div>'
+    +'<div style="display:flex;gap:8px;margin-top:12px;"><button class="btn" data-action="ps-clear" data-id="'+id+'" style="flex:0 0 auto;padding:13px 14px;border-radius:12px;border:1px solid '+C.redSoft+';background:'+C.redSoft+';color:'+C.red+';font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:5px;">'+icon("trash",15)+' 清空此人</button><button class="btn" data-action="close-sheet" style="flex:1;padding:13px;border-radius:12px;border:none;background:'+C.green+';color:#fff;font-weight:800;font-size:15px;">完成</button></div>';
+}
+function sheetInner(){var s=state.sheet;if(!s)return "";if(s.type==="picker"){var d=dutyById(s.id);return d?pickerInner(d):"";}if(s.type==="person")return personInner(s.id);return "";}
+function attachDrag(el){
+  var handle=el.querySelector('[data-drag]');if(!handle)return;var startY=0,dragging=false;
+  handle.onpointerdown=function(e){dragging=true;startY=e.clientY;el.style.transition="none";try{handle.setPointerCapture(e.pointerId);}catch(_){}};
+  handle.onpointermove=function(e){if(!dragging)return;var dy=Math.max(0,e.clientY-startY);el.style.transform="translateY("+dy+"px)";};
+  handle.onpointerup=function(e){if(!dragging)return;dragging=false;var dy=Math.max(0,e.clientY-startY);if(dy>90){closeSheet();}else{el.style.transition="transform .22s ease";el.style.transform="translateY(0)";}};
+  handle.onpointercancel=function(){dragging=false;el.style.transition="transform .22s ease";el.style.transform="translateY(0)";};
+}
+function openSheet(type,id){state.sheet={type:type,id:id};refreshHist();overlay.innerHTML='<div class="backdrop" data-action="close-sheet"><div class="sheet" data-action="noop">'+sheetInner()+'</div></div>';attachDrag(overlay.querySelector('.sheet'));}
+function refreshSheet(){if(!state.sheet){closeSheet();return;}refreshHist();var el=overlay.querySelector('.sheet');if(!el){openSheet(state.sheet.type,state.sheet.id);return;}var lw=el.querySelector('.sheet-list');var sc=lw?lw.scrollTop:0;el.innerHTML=sheetInner();var lw2=el.querySelector('.sheet-list');if(lw2)lw2.scrollTop=sc;attachDrag(el);}
+function closeSheet(){overlay.innerHTML="";state.sheet=null;render();}
+
+/* ---------- 渲染 ---------- */
+var root=document.getElementById("root"),navEl=document.getElementById("nav"),focusEl=null;
+function render(){
+  refreshHist();
+  var h=header();
+  if(state.page==="board"){h+=pasteCard();if(state.gongban.loaded){h+=availCard()+mealsRow()+dutyList()+boardActions();if(state.showPreview)h+=previewCard();h+=commitBtn();}}
+  else{h+=statsPage();}
+  root.innerHTML=h;
+  navEl.innerHTML='<button data-action="go-board" class="'+(state.page==="board"?"on":"")+'">'+icon("board",20)+'排班</button><button data-action="go-stats" class="'+(state.page==="stats"?"on":"")+'">'+icon("chart",20)+'統計</button>';
+  if(focusEl){var el=root.querySelector('[data-input="'+focusEl+'"]');if(el)el.focus();focusEl=null;}
+}
+function onInput(e){var t=e.target;if(!t.getAttribute)return;var k=t.getAttribute("data-input");if(!k)return;if(k==="paste")pasteText=t.value;else if(k==="import")importText=t.value;else if(k==="af-name")state.addForm.name=t.value;else if(k==="name"){state.names[t.getAttribute("data-id")]=t.value;persist();}}
+root.addEventListener("input",onInput);overlay.addEventListener("input",onInput);
+
+function handle(a,el){
+  var duty=el.getAttribute("data-duty"),pid=el.getAttribute("data-pid"),id=el.getAttribute("data-id"),day=el.getAttribute("data-day"),cat=el.getAttribute("data-cat");
+  if(a==="noop")return;
+  else if(a==="go-board"){state.page="board";closeSheet();state.page="board";render();}
+  else if(a==="go-stats"){state.page="stats";closeSheet();state.page="stats";render();}
+  else if(a==="parse"){var txt=(pasteText||"").trim();if(!txt){flash("先把公版貼進來");return;}var r=parseGongban(pasteText);if(!r.duties.length)flash("沒找到含261或打飯的勤務，確認格式");state.gongban={raw:pasteText,meta:r.meta,loaded:true};state.duties=r.duties;state.showPaste=false;state.showPreview=false;render();}
+  else if(a==="repaste"){state.showPaste=true;pasteText=state.gongban.raw;focusEl="paste";render();}
+  else if(a==="avail"){state.available[id]=!state.available[id];render();}
+  else if(a==="pick"){openSheet("picker",duty);}
+  else if(a==="open-person"){openSheet("person",parseInt(id,10));}
+  else if(a==="close-sheet"){closeSheet();}
+  else if(a==="count-dec"){var d1=currentDuty();if(d1)d1.count=Math.max(1,d1.count-1);refreshSheet();}
+  else if(a==="count-inc"){var d2=currentDuty();if(d2)d2.count=Math.min(8,d2.count+1);refreshSheet();}
+  else if(a==="toggle-keepall"){var d3=currentDuty();if(d3){d3.keepAll=!d3.keepAll;if(d3.keepAll)d3.assigned=[];}refreshSheet();}
+  else if(a==="del-duty"){var d4=currentDuty();if(d4){if(d4.kind==="manual")state.duties=state.duties.filter(function(x){return x!==d4;});else d4.removed=true;}closeSheet();}
+  else if(a==="pick-toggle"){var pv=parseInt(pid,10),dd=currentDuty();if(dd){var i=dd.assigned.indexOf(pv);if(i>=0)dd.assigned.splice(i,1);else{if(dd.kind==="meal")dd.assigned=[pv];else dd.assigned.push(pv);}}refreshSheet();}
+  else if(a==="ps-dec"){removeOne(parseInt(id,10),cat);persist();refreshSheet();}
+  else if(a==="ps-clear"){clearPerson(parseInt(id,10));persist();closeSheet();flash("已清空該人紀錄");}
+  else if(a==="auto"){autoAssign();}
+  else if(a==="copy-filled"){copyText(buildFilled());}
+  else if(a==="toggle-preview"){state.showPreview=!state.showPreview;render();}
+  else if(a==="commit"){commit();}
+  else if(a==="open-add"){state.addForm.open=true;focusEl="af-name";render();}
+  else if(a==="af-cancel"){state.addForm={open:false,name:"",period:"AM",count:1,keepAll:false};render();}
+  else if(a==="af-period"){state.addForm.period=el.getAttribute("data-p");render();}
+  else if(a==="af-keepall"){state.addForm.keepAll=!state.addForm.keepAll;render();}
+  else if(a==="af-dec"){state.addForm.count=Math.max(1,state.addForm.count-1);render();}
+  else if(a==="af-inc"){state.addForm.count=Math.min(8,state.addForm.count+1);render();}
+  else if(a==="af-add"){var f=state.addForm;var nm=(f.name||"").trim();if(!nm){flash("先幫勤務取個名字");return;}state.duties.push({id:"m"+Date.now(),kind:"manual",label:nm,period:f.period,count:f.keepAll?0:Math.max(1,f.count),assigned:[],keepAll:f.keepAll,removed:false});state.addForm={open:false,name:"",period:"AM",count:1,keepAll:false};render();}
+  else if(a==="open-import"){state.importOpen=true;focusEl="import";render();}
+  else if(a==="cancel-import"){state.importOpen=false;importText="";render();}
+  else if(a==="do-import"){var it=(importText||"").trim();if(!it){flash("先把公版貼進來");return;}var pr=parseFilled(importText);if(!pr.entries.length){flash("沒抓到我們的名字，確認公版已填好名字");return;}state.log.push({id:Date.now(),date:pr.date,entries:pr.entries});persist();state.importOpen=false;importText="";flash("已記錄 "+pr.date+"（"+pr.entries.length+" 人次）");render();}
+  else if(a==="del-day"){var did=parseInt(day,10);state.log=state.log.filter(function(e){return e.id!==did;});persist();flash("已刪除該天紀錄");render();}
+  else if(a==="ask-reset"){state.confirmReset=true;render();}
+  else if(a==="cancel-reset"){state.confirmReset=false;render();}
+  else if(a==="do-reset"){state.log=[];state.confirmReset=false;persist();flash("統計已全部清空");render();}
+}
+function onClick(e){var el=e.target.closest?e.target.closest("[data-action]"):null;if(el)handle(el.getAttribute("data-action"),el);}
+root.addEventListener("click",onClick);navEl.addEventListener("click",onClick);overlay.addEventListener("click",onClick);
+render();
 </script>
 </body>
 </html>
