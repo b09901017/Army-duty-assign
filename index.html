@@ -56,7 +56,7 @@ function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp
 function nameOf(id){return state.names[id];}
 function personByCode(pid){for(var i=0;i<PEOPLE.length;i++)if(PEOPLE[i].id===pid)return PEOPLE[i];return null;}
 function splitColon(line){var i=line.search(/[：:]/);if(i<0)return null;return {label:line.slice(0,i).trim(),colon:line[i],rhs:line.slice(i+1)};}
-var GCOLORS={"打飯":"#A9793F","公差":"#4E6E8E","打掃":"#3B6147"};
+var GCOLORS={"打飯":"#C08743","公差":"#5479A6","打掃":"#4F8A6A"};
 function deriveGroup(cat){if(cat==="打飯")return "打飯";if(/公差|車場|鋁床|經理|保槍|安官|衛哨|哨/.test(cat))return "公差";return "打掃";}
 function catColor(cat){var g=(typeof HIST!=="undefined"&&HIST.cg&&HIST.cg[cat])||deriveGroup(cat);return GCOLORS[g]||"#888";}
 function sum(o){var s=0;for(var k in o)s+=o[k];return s;}
@@ -137,6 +137,7 @@ function disconnectSync(){state.syncUrl="";try{localStorage.removeItem(SYNC_KEY)
 var HIST={h:{},cg:{}};
 function getHistory(){var h={},cg={};PEOPLE.forEach(function(p){h[p.id]={};});state.log.forEach(function(e){e.entries.forEach(function(x){if(!h[x.p])h[x.p]={};h[x.p][x.c]=(h[x.p][x.c]||0)+1;if(x.g)cg[x.c]=x.g;else if(!cg[x.c])cg[x.c]=deriveGroup(x.c);});});return {h:h,cg:cg};}
 function refreshHist(){HIST=getHistory();}
+function sortCats(cats,h){var go={"打掃":0,"公差":1,"打飯":2};return cats.sort(function(a,b){var ga=go[HIST.cg[a]||deriveGroup(a)],gb=go[HIST.cg[b]||deriveGroup(b)];return ga-gb||h[b]-h[a];});}
 function total(id){return sum(HIST.h[id]||{});}
 function nonMealTotal(id){var h=HIST.h[id]||{},s=0;for(var k in h){if(k!=="打飯")s+=h[k];}return s;}
 
@@ -196,6 +197,31 @@ function buildFilled(){
   var base=state.gongban.meta.map(rebuildLine).join("\n");
   var extra=state.duties.filter(function(d){return d.kind==="manual"&&!d.removed&&(d.keepAll||d.assigned.length);}).map(function(d){return d.label+"："+(d.keepAll?"261":d.assigned.map(nameOf).join("+"));});
   return base+(extra.length?"\n"+extra.join("\n"):"");
+}
+function buildPersonList(){
+  var date=extractDate(state.gongban.raw)||todayLabel();
+  var lines=["「"+date+"」個人分工",""];
+  PEOPLE.forEach(function(p){
+    lines.push(p.id+" "+nameOf(p.id));
+    var meals=[],bp={AM:[],NOON:[],PM:[]},gc=[];
+    state.duties.forEach(function(d){
+      if(d.removed)return;
+      if(!(d.keepAll||d.assigned.indexOf(p.id)>=0))return;
+      var suf=d.keepAll?"（全班）":"";
+      if(d.kind==="meal")meals.push(d.period==="AM"?"早打飯":d.period==="NOON"?"午打飯":"晚打飯");
+      else if(d.period==="GC")gc.push(d.label+suf);
+      else bp[d.period].push(d.label+suf);
+    });
+    var any=false;
+    meals.forEach(function(m){lines.push(m);any=true;});
+    if(bp.AM.length){lines.push("上午打掃："+bp.AM.join("、"));any=true;}
+    if(bp.NOON.length){lines.push("中午打掃："+bp.NOON.join("、"));any=true;}
+    if(bp.PM.length){lines.push("晚間打掃："+bp.PM.join("、"));any=true;}
+    if(gc.length){lines.push("公差："+gc.join("、"));any=true;}
+    if(!any)lines.push("今日無勤務");
+    lines.push("");
+  });
+  return lines.join("\n").replace(/\s+$/,"");
 }
 function parseFilled(text){
   var lines=text.replace(/\r/g,"").split("\n"),dateLabel=extractDate(text)||todayLabel(),entries=[],section="";
@@ -271,7 +297,28 @@ function commit(){
   PEOPLE.forEach(function(p){state.available[p.id]=true;});
   flash("已計入統計（"+date+"），今日已清空");render();
 }
-function copyText(text){if(!text)return;function ok(){flash("已複製");}function bad(){flash("複製失敗，請長按框內文字選取");}try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(ok,bad);else bad();}catch(e){bad();}}
+function fallbackCopy(text){
+  try{
+    var ta=document.createElement("textarea");
+    ta.value=text;ta.setAttribute("readonly","");
+    ta.style.position="fixed";ta.style.top="0";ta.style.left="0";ta.style.width="1px";ta.style.height="1px";ta.style.opacity="0";
+    document.body.appendChild(ta);ta.focus();ta.select();
+    try{ta.setSelectionRange(0,text.length);}catch(e){}
+    var ok=false;try{ok=document.execCommand("copy");}catch(e){}
+    document.body.removeChild(ta);
+    flash(ok?"已複製":"複製失敗，請長按預覽文字選取");
+  }catch(e){flash("複製失敗，請長按預覽文字選取");}
+}
+function copyText(text){
+  if(!text)return;
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){flash("已複製");},function(){fallbackCopy(text);});
+      return;
+    }
+  }catch(e){}
+  fallbackCopy(text);
+}
 function removeOne(pid,cat){for(var i=state.log.length-1;i>=0;i--){var e=state.log[i];for(var j=0;j<e.entries.length;j++){if(e.entries[j].p===pid&&e.entries[j].c===cat){e.entries.splice(j,1);if(!e.entries.length)state.log.splice(i,1);return true;}}}return false;}
 function clearPerson(pid){for(var i=state.log.length-1;i>=0;i--){var e=state.log[i];e.entries=e.entries.filter(function(x){return x.p!==pid;});if(!e.entries.length)state.log.splice(i,1);}}
 
@@ -317,17 +364,17 @@ function addDutyBlock(){
   var stepper=f.keepAll?"":'<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12.5px;color:'+C.sub+';">人數</span><div style="display:flex;align-items:center;gap:2px;border:1px solid '+C.line+';border-radius:9px;padding:2px;"><button class="btn" data-action="af-dec" style="width:28px;height:28px;border-radius:7px;border:none;background:'+C.bg+';color:'+C.green+';display:flex;align-items:center;justify-content:center;">'+icon("minus",14)+'</button><span style="width:24px;text-align:center;font-size:15px;font-weight:800;">'+f.count+'</span><button class="btn" data-action="af-inc" style="width:28px;height:28px;border-radius:7px;border:none;background:'+C.bg+';color:'+C.green+';display:flex;align-items:center;justify-content:center;">'+icon("plus",14)+'</button></div></div>';
   return card(label("手動新增勤務")+'<input data-input="af-name" value="'+esc(f.name)+'" placeholder="勤務名稱" style="width:100%;margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:14px;outline:none;" /><div style="display:flex;gap:6px;margin-top:9px;">'+seg+'</div><div style="display:flex;align-items:center;justify-content:space-between;margin-top:11px;"><button class="btn" data-action="af-keepall" style="display:flex;align-items:center;gap:7px;padding:7px 10px;border-radius:9px;border:1px solid '+(f.keepAll?C.green:C.line)+';background:'+(f.keepAll?C.greenSoft:C.surface)+';color:'+(f.keepAll?C.greenDeep:C.sub)+';font-size:12.5px;font-weight:600;"><span style="width:15px;height:15px;border-radius:5px;border:1.5px solid '+(f.keepAll?C.green:C.sub)+';background:'+(f.keepAll?C.green:"transparent")+';display:flex;align-items:center;justify-content:center;">'+(f.keepAll?icon("check",10,"#fff"):"")+'</span>八人一起</button>'+stepper+'</div><div style="display:flex;gap:8px;margin-top:12px;"><button class="btn" data-action="af-cancel" style="flex:1;padding:10px;border-radius:10px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:13.5px;">取消</button><button class="btn" data-action="af-add" style="flex:2;padding:10px;border-radius:10px;border:none;background:'+C.green+';color:#fff;font-weight:700;font-size:13.5px;">加入</button></div>',"margin-top:10px;");
 }
-function boardActions(){return '<div style="margin-top:18px;"><button class="btn" data-action="auto" style="width:100%;padding:14px;border-radius:14px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 6px 16px rgba(42,70,52,.22);">'+icon("wand",18,"#fff")+' 自動分配</button></div><button class="btn" data-action="copy-filled" style="width:100%;margin-top:8px;padding:14px;border-radius:14px;border:none;background:'+C.brass+';color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;gap:7px;">'+icon("copy",18,"#fff")+' 複製填好的公版</button><button class="btn" data-action="toggle-preview" style="width:100%;margin-top:8px;padding:9px;border:none;background:transparent;color:'+C.sub+';font-size:13px;font-weight:700;">'+(state.showPreview?"收起預覽 ▲":"預覽填好的公版 ▼")+'</button>';}
-function previewCard(){return card('<pre style="margin:0;font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;color:'+C.ink+';font-family:ui-monospace,Menlo,monospace;">'+esc(buildFilled())+'</pre>',"margin-top:2px;");}
+function boardActions(){return '<div style="margin-top:18px;"><button class="btn" data-action="auto" style="width:100%;padding:14px;border-radius:14px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 6px 16px rgba(42,70,52,.22);">'+icon("wand",18,"#fff")+' 自動分配</button></div><button class="btn" data-action="copy-filled" style="width:100%;margin-top:8px;padding:14px;border-radius:14px;border:none;background:'+C.brass+';color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;gap:7px;">'+icon("copy",18,"#fff")+' 複製填好的公版（給班長）</button><button class="btn" data-action="copy-persons" style="width:100%;margin-top:8px;padding:14px;border-radius:14px;border:1.5px solid '+C.green+';background:'+C.greenSoft+';color:'+C.greenDeep+';font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;gap:7px;">'+icon("copy",18)+' 複製個人分工（給大家）</button><button class="btn" data-action="toggle-preview" style="width:100%;margin-top:8px;padding:9px;border:none;background:transparent;color:'+C.sub+';font-size:13px;font-weight:700;">'+(state.showPreview?"收起預覽 ▲":"預覽 ▼")+'</button>';}
+function previewCard(){return card('<div style="font-size:11px;font-weight:800;letter-spacing:1px;color:'+C.sub+';margin-bottom:6px;">填好的公版</div><pre style="margin:0;font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;color:'+C.ink+';font-family:ui-monospace,Menlo,monospace;">'+esc(buildFilled())+'</pre><div style="height:1px;background:'+C.line+';margin:12px 0;"></div><div style="font-size:11px;font-weight:800;letter-spacing:1px;color:'+C.sub+';margin-bottom:6px;">個人分工</div><pre style="margin:0;font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;color:'+C.ink+';font-family:ui-monospace,Menlo,monospace;">'+esc(buildPersonList())+'</pre>',"margin-top:2px;");}
 function commitBtn(){return '<button class="btn" data-action="commit" style="width:100%;margin-top:12px;padding:13px;border-radius:14px;border:1.5px solid '+C.green+';background:'+C.greenSoft+';color:'+C.greenDeep+';font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;gap:7px;">'+icon("check",17)+' 完成並計入統計（清空今日）</button>';}
 
 /* ---------- 統計 ---------- */
 function statsCard(p){
   var h=HIST.h[p.id]||{},cats=Object.keys(h).filter(function(k){return h[k]>0;});
-  var tot=cats.reduce(function(s,k){return s+h[k];},0);cats.sort(function(a,b){return h[b]-h[a];});
+  var tot=cats.reduce(function(s,k){return s+h[k];},0);sortCats(cats,h);
   var byG={};cats.forEach(function(k){var g=(HIST.cg[k]||deriveGroup(k));byG[g]=(byG[g]||0)+h[k];});
   var seg=["打掃","公差","打飯"].filter(function(g){return byG[g];}).map(function(g){return '<div style="width:'+(tot?(byG[g]/tot*100):0)+'%;background:'+GCOLORS[g]+';"></div>';}).join("");
-  var chips=cats.length?cats.map(function(k){return '<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:700;color:#fff;background:'+catColor(k)+';padding:3px 8px;border-radius:999px;">'+esc(k)+' '+h[k]+'</span>';}).join(""):'<span style="font-size:11.5px;color:'+C.sub+';">尚未排過</span>';
+  var chips=cats.length?cats.map(function(k){var col=catColor(k);return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:'+col+';background:'+col+'22;padding:3px 9px;border-radius:999px;"><span style="width:7px;height:7px;border-radius:999px;background:'+col+';"></span>'+esc(k)+' '+h[k]+'</span>';}).join(""):'<span style="font-size:11.5px;color:'+C.sub+';">尚未排過</span>';
   return '<button class="btn tap" data-action="open-person" data-id="'+p.id+'" style="text-align:left;background:'+C.surface+';border:1px solid '+C.line+';border-radius:14px;padding:12px;"><div style="display:flex;align-items:center;gap:8px;">'+badge(p.code,22,"green")+'<span style="flex:1;min-width:0;font-size:14px;font-weight:800;color:'+C.ink+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(nameOf(p.id))+'</span></div><div style="margin-top:8px;display:flex;align-items:baseline;gap:3px;"><span style="font-size:22px;font-weight:800;color:'+C.greenDeep+';font-variant-numeric:tabular-nums;">'+tot+'</span><span style="font-size:11px;color:'+C.sub+';">次</span></div><div style="display:flex;height:7px;border-radius:4px;overflow:hidden;background:'+C.line+';margin-top:6px;">'+seg+'</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;">'+chips+'</div></button>';
 }
 function importBlock(){
@@ -377,9 +424,9 @@ function pickerInner(d){
     var keep='<button class="btn" data-action="toggle-keepall" style="display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:9px;border:1px solid '+(d.keepAll?C.green:C.line)+';background:'+(d.keepAll?C.greenSoft:C.surface)+';color:'+(d.keepAll?C.greenDeep:C.sub)+';font-size:12.5px;font-weight:600;"><span style="width:15px;height:15px;border-radius:5px;border:1.5px solid '+(d.keepAll?C.green:C.sub)+';background:'+(d.keepAll?C.green:"transparent")+';display:flex;align-items:center;justify-content:center;">'+(d.keepAll?icon("check",10,"#fff"):"")+'</span>八人一起</button>';
     ctrl='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">'+stepper+keep+'</div>';
   }
-  var list=d.keepAll?'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:24px 0;">這項會保留成「261」，不用選人。</div>':PEOPLE.slice().sort(function(a,b){return total(a.id)-total(b.id)||a.id-b.id;}).map(function(p){
+  var cat=d.kind==="meal"?"打飯":d.label;function pcnt(pid){return (HIST.h[pid]&&HIST.h[pid][cat])||0;}var list=d.keepAll?'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:24px 0;">這項會保留成「261」，不用選人。</div>':PEOPLE.slice().sort(function(a,b){return pcnt(a.id)-pcnt(b.id)||a.id-b.id;}).map(function(p){
     var on=d.assigned.indexOf(p.id)>=0,off=!state.available[p.id],blocked=(!on)&&(occ[p.id]!==undefined),dis=off||blocked;
-    var subT=off?"今日補休／站哨":blocked?("同時段已排："+occ[p.id]):("累積 "+total(p.id)+" 次"),subCol=off?C.red:blocked?C.amber:C.sub;
+    var subT=off?"今日補休／站哨":blocked?("同時段已排："+occ[p.id]):(cat+" "+pcnt(p.id)+" 次"),subCol=off?C.red:blocked?C.amber:C.sub;
     return '<button '+(dis?"disabled":'data-action="pick-toggle" data-pid="'+p.id+'"')+' style="width:100%;display:flex;align-items:center;gap:11px;padding:11px 8px;border-radius:11px;border:none;background:'+(on?C.greenSoft:"transparent")+';opacity:'+(dis?0.42:1)+';text-align:left;'+(dis?"cursor:not-allowed;":"")+'">'+badge(p.code,30,on?"green":"mute")+'<div style="flex:1;"><div style="font-size:15px;font-weight:700;color:'+C.ink+';display:flex;align-items:center;gap:5px;">'+esc(nameOf(p.id))+(blocked?icon("lock",12,C.amber):"")+'</div><div style="font-size:11.5px;color:'+subCol+';">'+subT+'</div></div><span style="width:24px;height:24px;border-radius:999px;border:2px solid '+(on?C.green:C.line)+';background:'+(on?C.green:"transparent")+';display:flex;align-items:center;justify-content:center;">'+(on?icon("check",14,"#fff"):"")+'</span></button>';
   }).join("");
   var blockNote=B?('<div style="font-size:11px;color:'+C.sub+';margin:0 0 8px;">同一時段（'+(B==="AM"?"上午":B==="NOON"?"中午":"晚間")+'）已排的人會鎖住。</div>'):"";
@@ -389,7 +436,7 @@ function pickerInner(d){
     +'<div style="display:flex;gap:8px;margin-top:12px;"><button class="btn" data-action="del-duty" style="flex:0 0 auto;padding:13px 16px;border-radius:12px;border:1px solid '+C.redSoft+';background:'+C.redSoft+';color:'+C.red+';font-weight:700;font-size:14px;display:flex;align-items:center;gap:5px;">'+icon("trash",15)+' 移除</button><button class="btn" data-action="close-sheet" style="flex:1;padding:13px;border-radius:12px;border:none;background:'+C.green+';color:#fff;font-weight:800;font-size:15px;">完成</button></div>';
 }
 function personInner(id){
-  var h=HIST.h[id]||{},cats=Object.keys(h).filter(function(k){return h[k]>0;});cats.sort(function(a,b){return h[b]-h[a];});
+  var h=HIST.h[id]||{},cats=Object.keys(h).filter(function(k){return h[k]>0;});sortCats(cats,h);
   var tot=cats.reduce(function(s,k){return s+h[k];},0);
   var rows=cats.length?cats.map(function(k){return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;"><span style="width:12px;height:12px;border-radius:4px;background:'+catColor(k)+';flex-shrink:0;"></span><span style="flex:1;font-size:14px;font-weight:600;">'+esc(k)+'</span><span style="font-size:14px;font-weight:800;color:'+C.greenDeep+';font-variant-numeric:tabular-nums;">×'+h[k]+'</span><button class="btn" data-action="ps-dec" data-id="'+id+'" data-cat="'+esc(k)+'" style="width:30px;height:30px;border-radius:8px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.red+';display:flex;align-items:center;justify-content:center;">'+icon("minus",15)+'</button></div>';}).join(""):'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:22px 0;">這個人還沒有紀錄。</div>';
   return handleBar()
@@ -444,6 +491,7 @@ function handle(a,el){
   else if(a==="ps-clear"){clearPerson(parseInt(id,10));persist();closeSheet();flash("已清空該人紀錄");}
   else if(a==="auto"){autoAssign();}
   else if(a==="copy-filled"){copyText(buildFilled());}
+  else if(a==="copy-persons"){copyText(buildPersonList());}
   else if(a==="toggle-preview"){state.showPreview=!state.showPreview;render();}
   else if(a==="commit"){commit();}
   else if(a==="open-add"){state.addForm.open=true;focusEl="af-name";render();}
