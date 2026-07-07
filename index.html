@@ -50,14 +50,14 @@ var C={bg:"#F1F3EE",surface:"#fff",ink:"#20261E",sub:"#6C7268",line:"#E3E5DC",gr
 var PAL=["#3B6147","#4E6E8E","#8E5A6E","#6E7D3D","#B06A3C","#4C7D74","#7A6BA8","#997A2E","#A65A5A","#5B8C6E","#54708A","#8A6D3B","#6B5B95","#3F7D6E","#A34E5E","#5F8C3A","#7E6248","#4670A0","#9C5B7C","#4A8577"];
 var STORE_KEY="duty-board-v3";
 
-var ICON={plus:'<path d="M12 5v14"/><path d="M5 12h14"/>',minus:'<path d="M5 12h14"/>',x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',check:'<path d="M20 6 9 17l-5-5"/>',rotate:'<path d="M3 12a9 9 0 1 0 9-9 9.7 9.7 0 0 0-6.7 2.7L3 8"/><path d="M3 3v5h5"/>',copy:'<rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',wand:'<path d="M4 20 14 10"/><path d="m17 3 1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"/>',trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',board:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>',chart:'<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/>',lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2.5"/>'};
+var ICON={plus:'<path d="M12 5v14"/><path d="M5 12h14"/>',minus:'<path d="M5 12h14"/>',x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',check:'<path d="M20 6 9 17l-5-5"/>',rotate:'<path d="M3 12a9 9 0 1 0 9-9 9.7 9.7 0 0 0-6.7 2.7L3 8"/><path d="M3 3v5h5"/>',copy:'<rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',wand:'<path d="M4 20 14 10"/><path d="m17 3 1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"/>',trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',board:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>',chart:'<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/>',lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2.5"/>',pencil:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'};
 function icon(n,s,c){s=s||18;c=c||"currentColor";return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="'+c+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+ICON[n]+'</svg>';}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
 function nameOf(id){return state.names[id];}
 function personByCode(pid){for(var i=0;i<PEOPLE.length;i++)if(PEOPLE[i].id===pid)return PEOPLE[i];return null;}
 function splitColon(line){var i=line.search(/[：:]/);if(i<0)return null;return {label:line.slice(0,i).trim(),colon:line[i],rhs:line.slice(i+1)};}
 var GCOLORS={"打飯":"#C08743","公差":"#5479A6","打掃":"#4F8A6A","大公差":"#9C4A6E","小公差":"#6B5B95","站哨":"#3E7B8C","分菜":"#B06A3C"};
-function deriveGroup(cat){if(cat==="大公差")return "大公差";if(cat==="小公差")return "小公差";if(cat==="分菜")return "分菜";if(cat==="打飯")return "打飯";if(/公差|車場|鋁床|經理|保槍|安官|衛哨|哨/.test(cat))return "公差";return "打掃";}
+function deriveGroup(cat){if(cat==="大公差")return "大公差";if(cat==="小公差")return "小公差";if(/分菜/.test(cat))return "分菜";if(/(早打|午打|晚打)/.test(cat)||cat==="打飯")return "打飯";if(/公差|車場|鋁床|經理|保槍|安官|衛哨|哨/.test(cat))return "公差";return "打掃";}
 function catColor(cat){var g=(typeof HIST!=="undefined"&&HIST.cg&&HIST.cg[cat])||deriveGroup(cat);return GCOLORS[g]||"#888";}
 function sum(o){var s=0;for(var k in o)s+=o[k];return s;}
 function todayLabel(){var d=new Date();return (d.getMonth()+1)+"/"+d.getDate();}
@@ -113,10 +113,17 @@ var state={
   plans:(saved&&saved.plans)?saved.plans:{},
   dayView:{mode:"A",date:""},
   absence:(saved&&saved.absence)?saved.absence:{},
-  absForm:{reason:"補休",start:"",len:1,range:""}
+  absForm:{reason:"補休",start:"",len:1,range:""},
+  boards:(saved&&saved.boards)?saved.boards:{},
+  activeDate:(saved&&saved.activeDate)?saved.activeDate:"",
+  boardMode:"edit",boardOpen:false
 };
+(function(){var d=state.activeDate,b=d&&state.boards[d];if(b&&b.duties){state.gongban={raw:b.raw,meta:b.meta,loaded:true};state.duties=b.duties;if(b.schedule&&b.schedule.items)state.schedule=b.schedule;}else{state.activeDate="";}})();
 var pasteText="",importText="",restoreText="",syncInput="";
-function persistLocal(){try{localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,schedule:state.schedule,plans:state.plans,absence:state.absence}));}catch(e){}}
+function saveBoard(){if(!state.activeDate||!state.gongban.loaded)return;var prev=state.boards[state.activeDate];state.boards[state.activeDate]={raw:state.gongban.raw,meta:state.gongban.meta,duties:state.duties,schedule:state.schedule,committed:(prev&&prev.committed)||false,wd:(prev&&prev.wd)||""};}
+function loadBoard(date){saveBoard();var b=state.boards[date];if(!b)return false;state.gongban={raw:b.raw,meta:b.meta,loaded:true};state.duties=b.duties;state.schedule=(b.schedule&&b.schedule.items)?b.schedule:{raw:"",items:[],title:"",loaded:false,date:""};state.activeDate=date;return true;}
+function boardDates(){return Object.keys(state.boards).sort(function(a,b){return dnum(a)-dnum(b);});}
+function persistLocal(){try{saveBoard();localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,schedule:state.schedule,plans:state.plans,absence:state.absence,boards:state.boards,activeDate:state.activeDate}));}catch(e){}}
 function persist(){persistLocal();pushSync();}
 var SYNC_KEY="duty-sync-url",pushT=null,lastPushAt=0,pollTimer=null;
 function payload(){return JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,plans:state.plans,absence:state.absence});}
@@ -159,12 +166,13 @@ function connectSync(url){
 }
 function disconnectSync(){state.syncUrl="";try{localStorage.removeItem(SYNC_KEY);}catch(e){}state.syncStatus="";state.syncOpen=false;if(pollTimer)clearInterval(pollTimer);flash("已中斷同步（改回只存本機）");render();}
 
-var HIST={h:{},cg:{}};
-function getHistory(){var h={},cg={};PEOPLE.forEach(function(p){h[p.id]={};});state.log.forEach(function(e){e.entries.forEach(function(x){if(!h[x.p])h[x.p]={};h[x.p][x.c]=(h[x.p][x.c]||0)+1;if(x.g)cg[x.c]=x.g;else if(!cg[x.c])cg[x.c]=deriveGroup(x.c);});});return {h:h,cg:cg};}
+var HIST={h:{},cg:{},g:{}};
+function getHistory(){var h={},cg={},g={};PEOPLE.forEach(function(p){h[p.id]={};g[p.id]={};});state.log.forEach(function(e){e.entries.forEach(function(x){if(!h[x.p])h[x.p]={};h[x.p][x.c]=(h[x.p][x.c]||0)+1;var grp=x.g||deriveGroup(x.c);cg[x.c]=grp;if(!g[x.p])g[x.p]={};g[x.p][grp]=(g[x.p][grp]||0)+1;});});return {h:h,cg:cg,g:g};}
 function refreshHist(){HIST=getHistory();}
 function sortCats(cats,h){var go={"打掃":0,"公差":1,"大公差":2,"小公差":3,"打飯":4,"分菜":5};return cats.sort(function(a,b){var ga=go[HIST.cg[a]||deriveGroup(a)],gb=go[HIST.cg[b]||deriveGroup(b)];return ga-gb||h[b]-h[a];});}
 function total(id){return sum(HIST.h[id]||{});}
-function nonMealTotal(id){var h=HIST.h[id]||{},s=0;for(var k in h){if(k!=="打飯")s+=h[k];}return s;}
+function groupTotal(id,grp){return (HIST.g[id]&&HIST.g[id][grp])||0;}
+function nonMealTotal(id){return total(id)-groupTotal(id,"打飯");}
 
 var toastT=null;
 function flash(m){var t=document.getElementById("toast");t.textContent=m;t.className="toast show";clearTimeout(toastT);toastT=setTimeout(function(){t.className="toast";},2200);}
@@ -186,6 +194,11 @@ function parseGongban(text){
     if(!sc){if(/上午/.test(t))sub="AM";else if(/下午/.test(t))sub="AFT";else if(/(晚間|晚上|晚)/.test(t))sub="PM";else if(/(中午|午)/.test(t))sub="NOON";return {type:"static",text:raw};}
     var rawLabel=stripNum(sc.label);if(!rawLabel)return {type:"static",text:raw};
     var et=extractTime(rawLabel),disp=et.rest||rawLabel,time=et.time;
+    var isAlert=/🚨/.test(raw);
+    var starM=disp.match(/[\*＊]\s*(\d+)/),starN=starM?parseInt(starM[1],10):0;
+    var ptm=disp.match(/[（(]\s*(\d{3,4})/);if(!time&&ptm)time=ptm[1];
+    disp=disp.replace(/^[🔷🔵🚨🔺🔸🔹⬇️➡️]+\s*/,"").replace(/[（(][^）)]*[）)]/g,"").replace(/[\*＊]\s*\d+\s*員?/g,"").trim();
+    if(!disp)return {type:"static",text:raw};
     var period=section==="gongcha"?"GC":sub;
     var mm=disp.match(/(早打|午打|晚打)/)||rawLabel.match(/(早打|午打|晚打)/);
     if(mm){var per=mm[1]==="早打"?"AM":mm[1]==="午打"?"NOON":"PM";var mc=sc.rhs.match(/^\s*(\d+)/);var mcount=mc?parseInt(mc[1],10):1;var dm={id:"d"+idx,kind:"meal",mode:"append",label:disp,time:null,period:per,block:per,count:mcount||1,assigned:[],keepAll:false,removed:false,original:raw,extra:null,schedTime:"",timeSrc:""};duties.push(dm);return {type:"duty",dutyId:dm.id};}
@@ -194,12 +207,12 @@ function parseGongban(text){
     var blk=time?timeBlock(time):(period==="GC"?null:period);
     var toks=sc.rhs.split(/[+、,，]/).map(function(x){return x.trim();}),tok261=null,cnt=1;
     for(var i=0;i<toks.length;i++){var c=count261Token(toks[i]);if(c>0){tok261=toks[i];cnt=c;break;}}
-    if(tok261){var d1={id:"d"+idx,kind:"fill",mode:"replace",label:disp,time:time,period:period,block:blk,count:cnt,assigned:[],keepAll:false,removed:false,original:raw,tok261:tok261,extra:null,schedTime:(time||""),timeSrc:""};duties.push(d1);return {type:"duty",dutyId:d1.id};}
+    if(tok261){var d1={id:"d"+idx,kind:"fill",mode:"replace",label:disp,time:time,period:period,block:blk,count:cnt,assigned:[],keepAll:false,removed:false,original:raw,tok261:tok261,extra:(isAlert?"small":null),schedTime:(time||""),timeSrc:""};duties.push(d1);return {type:"duty",dutyId:d1.id};}
     var f=find261(sc.rhs);
-    if(f){var d2={id:"d"+idx,kind:"fill",mode:"replace",label:disp,time:time,period:period,block:blk,count:f.n,assigned:[],keepAll:false,removed:false,original:raw,tok261:f.s,extra:null,schedTime:(time||""),timeSrc:""};duties.push(d2);return {type:"duty",dutyId:d2.id};}
+    if(f){var d2={id:"d"+idx,kind:"fill",mode:"replace",label:disp,time:time,period:period,block:blk,count:f.n,assigned:[],keepAll:false,removed:false,original:raw,tok261:f.s,extra:(isAlert?"small":null),schedTime:(time||""),timeSrc:""};duties.push(d2);return {type:"duty",dutyId:d2.id};}
     var pk=0;
     if(!sc.rhs.trim()){for(var j=idx+1;j<lines.length&&j<idx+4;j++){var nl=lines[j];if(nl.indexOf("🔷")>=0||!nl.trim()||/[：:]/.test(nl))break;var ff=find261(nl);if(ff){pk=ff.n;break;}}}
-    var d3={id:"d"+idx,kind:"fill",mode:"append",label:disp,time:time,period:period,block:blk,count:pk||1,assigned:[],keepAll:false,removed:false,original:raw,extra:null,schedTime:(time||""),timeSrc:""};
+    var d3={id:"d"+idx,kind:"fill",mode:"append",label:disp,time:time,period:period,block:blk,count:(starN||pk||1),assigned:[],keepAll:false,removed:false,original:raw,extra:(isAlert?"small":null),schedTime:(time||""),timeSrc:""};
     duties.push(d3);return {type:"duty",dutyId:d3.id};
   });
   return {meta:meta,duties:duties};
@@ -263,6 +276,7 @@ function buildPersonList(){
   });
   return out.join("\n").replace(/\s+$/,"");
 }
+function guardRange(code){return code.slice(0,2)+"00-"+code.slice(2,4)+"00";}
 function shiftHM(code){var a=code.slice(0,2),b=code.slice(2,4);return (a==="24"?"00":a)+":00–"+(b==="24"?"00":b)+":00";}
 function parseGuard(text){
   var lines=text.replace(/\r/g,"").split("\n"),days=[],meta=[],si=0;
@@ -308,15 +322,24 @@ function guardCommit(){
   state.guard.committed=true;persist();flash("已計入本週站哨（"+n+" 班）");render();
 }
 function parseFilled(text){
-  var lines=text.replace(/\r/g,"").split("\n"),dateLabel=extractDate(text)||todayLabel(),entries=[],section="";
+  var lines=text.replace(/\r/g,"").split("\n"),dateLabel=extractDate(text)||todayLabel(),entries=[],section="",fenca=false;
   var nmeMap={};PEOPLE.forEach(function(p){nmeMap[state.names[p.id]]=p.id;});
+  function clean(s){return s.replace(/^[🔷🔵🚨🔺🔸🔹⬇️➡️]+\s*/,"").replace(/[（(][^）)]*[）)]/g,"").replace(/[\*＊]\s*\d+\s*員?/g,"").replace(/^[\(（]?\s*\d+\s*[\)）]?[\.、]?\s*/,"").trim();}
+  function slot(lb){return /早/.test(lb)?"早":/(中|午)/.test(lb)?"中":/晚/.test(lb)?"晚":"";}
   lines.forEach(function(line){
-    if(line.indexOf("🔷")>=0){section=line.indexOf("公差")>=0?"gongcha":line.indexOf("打飯")>=0?"meal":"clean";return;}
+    var t=line.trim();
+    if(line.indexOf("🔷")>=0||line.indexOf("🔵")>=0){fenca=false;section=line.indexOf("公差")>=0?"gongcha":line.indexOf("打飯")>=0?"meal":line.indexOf("打掃")>=0?"clean":"other";return;}
     var sc=splitColon(line);if(!sc)return;
-    var lb=sc.label.replace(/^[\(（]?\s*\d+\s*[\)）]?[\.、]?\s*/,"").trim();if(!lb)return;
-    var isMeal=/(早打|午打|晚打|打飯)/.test(lb),cat=isMeal?"打飯":lb,g=isMeal?"打飯":section==="gongcha"?"公差":"打掃";
+    var isAlert=/🚨/.test(line);
+    var lb=clean(sc.label);if(!lb)return;
+    var g,cat;
+    if(/(早打|午打|晚打)/.test(lb)){g="打飯";cat=/早打/.test(lb)?"早打":/午打/.test(lb)?"午打":"晚打";}
+    else if(/分菜/.test(lb)){fenca=true;var sl=slot(lb);cat=sl?("分菜"+sl):"分菜";g="分菜";}
+    else if(fenca&&/^(早餐|中餐|晚餐|早|中|午|晚)$/.test(lb)){g="分菜";cat="分菜"+slot(lb);}
+    else if(isAlert){g="小公差";cat=lb;}
+    else{fenca=false;g=(section==="clean")?"打掃":"公差";cat=lb;}
     var toks=sc.rhs.split(/[+、,，\s]+/).map(function(x){return x.trim();}).filter(Boolean);
-    var allT=/八人一起|全班/.test(sc.rhs)||toks.some(function(x){return /^261(\*\d+)?$/.test(x);});
+    var allT=/八人一起|全班/.test(sc.rhs)||toks.some(function(x){return /^261(\s*[\*＊（(]\s*\d+\s*[）)]?)?$/.test(x);});
     if(allT){PEOPLE.forEach(function(p){entries.push({p:p.id,c:cat,g:g});});}
     else{toks.forEach(function(tk){if(Object.prototype.hasOwnProperty.call(nmeMap,tk))entries.push({p:nmeMap[tk],c:cat,g:g});});}
   });
@@ -370,25 +393,28 @@ function commit(){
   state.duties.forEach(function(d){
     if(d.removed)return;
     var g,cat;
-    if(d.extra==="big"){g="大公差";cat="大公差";}
-    else if(d.extra==="small"){g="小公差";cat="小公差";}
-    else if(d.fenca&&d.fenca!=="head"){g="分菜";cat="分菜";}
-    else{g=d.kind==="meal"?"打飯":d.period==="GC"?"公差":"打掃";cat=d.kind==="meal"?"打飯":d.label;}
+    if(d.extra==="big"){g="大公差";cat=d.label;}
+    else if(d.extra==="small"){g="小公差";cat=d.label;}
+    else if(d.fenca&&d.fenca!=="head"){g="分菜";cat=d.label;}
+    else if(d.kind==="meal"){g="打飯";cat=d.label;}
+    else{g=d.period==="GC"?"公差":"打掃";cat=d.label;}
     if(d.keepAll){PEOPLE.forEach(function(p){entries.push({p:p.id,c:cat,g:g});});}
     else{d.assigned.forEach(function(pid){entries.push({p:pid,c:cat,g:g});});}
   });
   if(!entries.length){flash("目前沒有可計入的分配");return;}
-  var date=extractDate(state.gongban.raw)||todayLabel();
+  var date=state.activeDate||extractDate(state.gongban.raw)||todayLabel();
   savePlan(date);
-  state.log.push({id:Date.now(),date:date,entries:entries});
-  var mealPpl=[];state.duties.filter(function(d){return d.kind==="meal"&&!d.removed;}).sort(function(a,b){return pord(a.period)-pord(b.period);}).forEach(function(d){d.assigned.forEach(function(pid){mealPpl.push(pid);});});
-  mealPpl.forEach(function(pid){var i=state.mealQueue.indexOf(pid);if(i>=0){state.mealQueue.splice(i,1);state.mealQueue.push(pid);}});
+  var lid="b_"+date;
+  state.log=state.log.filter(function(e){return String(e.id)!==lid;});
+  state.log.push({id:lid,date:date,entries:entries});
+  var bd=state.boards[date];
+  if(!(bd&&bd.committed)){
+    var mealPpl=[];state.duties.filter(function(d){return d.kind==="meal"&&!d.removed;}).sort(function(a,b){return pord(a.period)-pord(b.period);}).forEach(function(d){d.assigned.forEach(function(pid){mealPpl.push(pid);});});
+    mealPpl.forEach(function(pid){var i=state.mealQueue.indexOf(pid);if(i>=0){state.mealQueue.splice(i,1);state.mealQueue.push(pid);}});
+  }
+  saveBoard();if(state.boards[date])state.boards[date].committed=true;
   persist();
-  state.duties=[];state.gongban={raw:"",meta:[],loaded:false};state.showPaste=false;state.showPreview=false;pasteText="";
-  state.schedule={raw:"",items:[],title:"",loaded:false,date:""};state.schedPaste="";state.showSchedPaste=false;
-  state.addForm={open:false,name:"",period:"AM",count:1,keepAll:false,extra:null,time:""};
-  PEOPLE.forEach(function(p){state.available[p.id]=true;});
-  flash("已計入統計（"+date+"），今日已清空");render();
+  flash("已更新統計與行程（"+date+"）");render();
 }
 function fallbackCopy(text){
   try{
@@ -419,13 +445,20 @@ function clearPerson(pid){for(var i=state.log.length-1;i>=0;i--){var e=state.log
 function badge(code,size,tone){var bg=tone==="mute"?C.line:C.greenDeep,col=tone==="mute"?C.sub:"#fff";return '<span style="width:'+size+'px;height:'+size+'px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:'+bg+';color:'+col+';font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.5px;flex-shrink:0;">'+code+'</span>';}
 function card(inner,extra){return '<div style="background:'+C.surface+';border:1px solid '+C.line+';border-radius:16px;padding:15px;'+(extra||"")+'">'+inner+'</div>';}
 function label(t){return '<div style="font-size:12px;font-weight:800;letter-spacing:1px;color:'+C.sub+';">'+t+'</div>';}
+function boardTabs(){
+  var dates=boardDates();if(!dates.length)return "";
+  var mode=state.boardMode||"edit";
+  var pencil='<button class="btn" data-action="board-mode" style="flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:6px 11px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid '+(mode==="edit"?C.brass:C.line)+';background:'+(mode==="edit"?C.brassSoft:C.surface)+';color:'+(mode==="edit"?C.amber:C.sub)+';white-space:nowrap;">'+icon(mode==="edit"?"pencil":"eye",13,mode==="edit"?C.amber:C.sub)+(mode==="edit"?"編輯":"閱讀")+'</button>';
+  var tags=dates.map(function(d){var on=d===state.activeDate,b=state.boards[d];return '<button class="btn" data-action="board-load" data-d="'+esc(d)+'" style="flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:6px 11px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid '+(on?C.green:C.line)+';background:'+(on?C.greenSoft:C.surface)+';color:'+(on?C.greenDeep:C.sub)+';white-space:nowrap;">'+esc(d)+(b.wd?"（"+esc(b.wd)+"）":"")+(b.committed?icon("check",11,on?C.green:C.sub):"")+'</button>';}).join("");
+  return '<div style="margin-top:10px;display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;align-items:center;">'+pencil+tags+'</div>';
+}
 function header(){var d=new Date().toLocaleDateString("zh-TW",{month:"2-digit",day:"2-digit",weekday:"short"});var title=state.page==="board"?"排班板":state.page==="guard"?"排站哨":state.page==="day"?"行程":"統計";var dot=state.syncUrl?'<div style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:'+C.sub+';"><span id="syncdot" style="width:8px;height:8px;border-radius:999px;background:'+(state.syncStatus==="on"?C.green:state.syncStatus==="err"?C.red:C.line)+';"></span>雲端</div>':"";return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><div style="width:36px;height:36px;border-radius:10px;background:'+C.greenDeep+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;">261</div><div><div style="font-size:18px;font-weight:800;">'+title+'</div><div style="font-size:12px;color:'+C.sub+';">'+d+' · 8 員</div></div>'+dot+'</div>';}
 
 function pasteCard(){
-  var showBox=!state.gongban.loaded||state.showPaste;
+  var showBox=!state.gongban.loaded||state.showPaste||!state.boardOpen;
   if(showBox){return card(label("貼上今天的公版")+'<textarea data-input="paste" placeholder="把班長給的整份公版貼進來，會自動抓出所有含 261 的勤務和打飯。" style="width:100%;height:120px;margin-top:10px;padding:12px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:13.5px;line-height:1.6;outline:none;resize:vertical;font-family:ui-monospace,Menlo,monospace;">'+esc(pasteText)+'</textarea><button class="btn" data-action="parse" style="width:100%;margin-top:10px;padding:13px;border-radius:11px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:15px;">解析勤務</button>');}
   var n=state.duties.filter(function(d){return !d.removed;}).length;
-  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:'+C.greenSoft+';border:1px solid '+C.green+';border-radius:12px;padding:11px 14px;"><div style="display:flex;align-items:center;gap:8px;color:'+C.greenDeep+';font-weight:700;font-size:13.5px;">'+icon("check",16,C.green)+' 公版已載入 · '+n+' 項勤務</div><button class="btn" data-action="repaste" style="border:none;background:transparent;color:'+C.green+';font-weight:700;font-size:13px;text-decoration:underline;">重新貼上</button></div>';
+  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:'+C.greenSoft+';border:1px solid '+C.green+';border-radius:12px;padding:11px 14px;"><div style="display:flex;align-items:center;gap:8px;color:'+C.greenDeep+';font-weight:700;font-size:13.5px;">'+icon("check",16,C.green)+' '+esc(state.activeDate||"")+' · '+n+' 項</div><div style="display:flex;gap:12px;"><button class="btn" data-action="repaste" style="border:none;background:transparent;color:'+C.green+';font-weight:700;font-size:13px;text-decoration:underline;">重新貼上</button><button class="btn" data-action="board-close" style="border:none;background:transparent;color:'+C.sub+';font-weight:700;font-size:13px;">收起</button></div></div>';
 }
 function availCard(){var cd=curDate();var REC={"補休":C.amber,"大公差":GCOLORS["大公差"],"休假":"#4C7D74","其他":C.sub};var chips=PEOPLE.map(function(p){var rec=absenceRec(p.id,cd);var full=!!(rec&&!rec.range);var on=!full;var col=rec?(REC[rec.reason]||C.sub):C.green;var tag=rec?'<span style="font-size:9.5px;font-weight:800;color:'+col+';margin-left:1px;">'+esc(rec.reason)+(rec.range?fmtSpan(rec.range):"")+'</span>':"";return '<button class="btn tap" data-action="avail" data-id="'+p.id+'" style="display:flex;align-items:center;gap:5px;padding:5px 9px 5px 5px;border-radius:999px;border:1px solid '+(rec?col:C.green)+';background:'+(rec?col+"12":C.greenSoft)+';color:'+(on?C.greenDeep:C.sub)+';opacity:'+(on?1:0.9)+';">'+badge(p.code,20,on?"green":"mute")+'<span style="font-size:12.5px;font-weight:600;text-decoration:'+(full?"line-through":"none")+';">'+esc(nameOf(p.id))+'</span>'+tag+'</button>';}).join("");return '<div style="margin-top:14px;">'+card(label("今日出勤（"+esc(cd)+"）· 點掉＝整天不排")+'<div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;">'+chips+'</div><button class="btn" data-action="open-absence" style="width:100%;margin-top:11px;padding:9px;border-radius:10px;border:1px dashed '+C.line+';background:transparent;color:'+C.sub+';font-weight:700;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px;">'+icon("calendar",14)+' 排休／不在（補休時段、大公差整週…）</button>')+'</div>';}
 function mealCell(period){
@@ -482,15 +515,15 @@ function addDutyBlock(){
 }
 function boardActions(){return '<div style="margin-top:18px;"><button class="btn" data-action="auto" style="width:100%;padding:14px;border-radius:14px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 6px 16px rgba(42,70,52,.22);">'+icon("wand",18,"#fff")+' 自動分配</button></div><button class="btn" data-action="copy-filled" style="width:100%;margin-top:8px;padding:14px;border-radius:14px;border:none;background:'+C.brass+';color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;gap:7px;">'+icon("copy",18,"#fff")+' 複製填好的公版（給班長）</button><button class="btn" data-action="copy-persons" style="width:100%;margin-top:8px;padding:14px;border-radius:14px;border:1.5px solid '+C.green+';background:'+C.greenSoft+';color:'+C.greenDeep+';font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;gap:7px;">'+icon("copy",18)+' 複製個人分工（給大家）</button><button class="btn" data-action="toggle-preview" style="width:100%;margin-top:8px;padding:9px;border:none;background:transparent;color:'+C.sub+';font-size:13px;font-weight:700;">'+(state.showPreview?"收起預覽 ▲":"預覽 ▼")+'</button>';}
 function previewCard(){return card('<div style="font-size:11px;font-weight:800;letter-spacing:1px;color:'+C.sub+';margin-bottom:6px;">填好的公版</div><pre style="margin:0;font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;color:'+C.ink+';font-family:ui-monospace,Menlo,monospace;">'+esc(buildFilled())+'</pre><div style="height:1px;background:'+C.line+';margin:12px 0;"></div><div style="font-size:11px;font-weight:800;letter-spacing:1px;color:'+C.sub+';margin-bottom:6px;">個人分工</div><pre style="margin:0;font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;color:'+C.ink+';font-family:ui-monospace,Menlo,monospace;">'+esc(buildPersonList())+'</pre>',"margin-top:2px;");}
-function commitBtn(){return '<button class="btn" data-action="commit" style="width:100%;margin-top:12px;padding:13px;border-radius:14px;border:1.5px solid '+C.green+';background:'+C.greenSoft+';color:'+C.greenDeep+';font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;gap:7px;">'+icon("check",17)+' 完成並計入統計（清空今日）</button>';}
+function commitBtn(){return '<button class="btn" data-action="commit" style="width:100%;margin-top:12px;padding:13px;border-radius:14px;border:1.5px solid '+C.green+';background:'+C.greenSoft+';color:'+C.greenDeep+';font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;gap:7px;">'+icon("check",17)+' 計入統計／更新行程（可重複）</button>';}
 
 /* ---------- 統計 ---------- */
 function statsCard(p){
-  var h=HIST.h[p.id]||{},cats=Object.keys(h).filter(function(k){return h[k]>0;});
-  var tot=cats.reduce(function(s,k){return s+h[k];},0);sortCats(cats,h);
-  var byG={};cats.forEach(function(k){var g=(HIST.cg[k]||deriveGroup(k));byG[g]=(byG[g]||0)+h[k];});
-  var seg=["打掃","公差","大公差","小公差","打飯","分菜"].filter(function(g){return byG[g];}).map(function(g){return '<div style="width:'+(tot?(byG[g]/tot*100):0)+'%;background:'+GCOLORS[g]+';"></div>';}).join("");
-  var chips=cats.length?cats.map(function(k){var col=catColor(k);return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:'+col+';background:'+col+'22;padding:3px 9px;border-radius:999px;"><span style="width:7px;height:7px;border-radius:999px;background:'+col+';"></span>'+esc(k)+' '+h[k]+'</span>';}).join(""):'<span style="font-size:11.5px;color:'+C.sub+';">尚未排過</span>';
+  var G=HIST.g[p.id]||{},order=["打掃","公差","大公差","小公差","打飯","分菜"];
+  var tot=total(p.id);
+  var seg=order.filter(function(g){return G[g];}).map(function(g){return '<div style="width:'+(tot?(G[g]/tot*100):0)+'%;background:'+GCOLORS[g]+';"></div>';}).join("");
+  var gs=order.filter(function(g){return G[g];});
+  var chips=gs.length?gs.map(function(g){var col=GCOLORS[g];return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;color:'+col+';background:'+col+'1A;padding:3px 9px;border-radius:999px;"><span style="width:7px;height:7px;border-radius:999px;background:'+col+';"></span>'+g+' '+G[g]+'</span>';}).join(""):'<span style="font-size:11.5px;color:'+C.sub+';">尚未排過</span>';
   return '<button class="btn tap" data-action="open-person" data-id="'+p.id+'" style="text-align:left;background:'+C.surface+';border:1px solid '+C.line+';border-radius:14px;padding:12px;"><div style="display:flex;align-items:center;gap:8px;">'+badge(p.code,22,"green")+'<span style="flex:1;min-width:0;font-size:14px;font-weight:800;color:'+C.ink+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(nameOf(p.id))+'</span></div><div style="margin-top:8px;display:flex;align-items:baseline;gap:3px;"><span style="font-size:22px;font-weight:800;color:'+C.greenDeep+';font-variant-numeric:tabular-nums;">'+tot+'</span><span style="font-size:11px;color:'+C.sub+';">次</span></div><div style="display:flex;height:7px;border-radius:4px;overflow:hidden;background:'+C.line+';margin-top:6px;">'+seg+'</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;">'+chips+'</div></button>';
 }
 function importBlock(){
@@ -574,7 +607,7 @@ function guardDayRange(id){for(var i=0;i<state.guard.days.length;i++){var s=stat
 
 /* ---------- 底層面板（picker / person） ---------- */
 var overlay=document.getElementById("overlay");
-var pickAdv=false;
+var pickAdv=false,psOpen={};
 function handleBar(){return '<div data-drag="1" style="padding:9px 0 11px;cursor:grab;touch-action:none;"><div style="width:40px;height:4px;border-radius:2px;background:'+C.line+';margin:0 auto;"></div></div>';}
 function xBtn(){return '<button class="btn" data-action="close-sheet" style="width:30px;height:30px;border-radius:8px;border:none;background:'+C.bg+';color:'+C.sub+';display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+icon("x",16)+'</button>';}
 function currentDuty(){return (state.sheet&&state.sheet.type==="picker")?dutyById(state.sheet.id):null;}
@@ -588,8 +621,8 @@ function pickerInner(d){
   }
   var cat=d.kind==="meal"?"打飯":d.label,isEx=(d.extra==="big"||d.extra==="small");
   function pcnt(pid){return (HIST.h[pid]&&HIST.h[pid][cat])||0;}
-  function bigc(pid){return (HIST.h[pid]&&HIST.h[pid]["大公差"])||0;}
-  function smac(pid){return (HIST.h[pid]&&HIST.h[pid]["小公差"])||0;}
+  function bigc(pid){return groupTotal(pid,"大公差");}
+  function smac(pid){return groupTotal(pid,"小公差");}
   function exkey(pid){return d.extra==="big"?bigc(pid):smac(pid);}
   var sorted=PEOPLE.slice().sort(function(a,b){return (isEx?(exkey(a.id)-exkey(b.id)):(pcnt(a.id)-pcnt(b.id)))||a.id-b.id;});
   var list=d.keepAll?'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:24px 0;">這項會保留成「261」，不用選人。</div>':sorted.map(function(p){
@@ -616,13 +649,20 @@ function pickerInner(d){
     +'<div style="display:flex;gap:8px;margin-top:12px;"><button class="btn" data-action="del-duty" style="flex:0 0 auto;padding:13px 16px;border-radius:12px;border:1px solid '+C.redSoft+';background:'+C.redSoft+';color:'+C.red+';font-weight:700;font-size:14px;display:flex;align-items:center;gap:5px;">'+icon("trash",15)+' 移除</button><button class="btn" data-action="close-sheet" style="flex:1;padding:13px;border-radius:12px;border:none;background:'+C.green+';color:#fff;font-weight:800;font-size:15px;">完成</button></div>';
 }
 function personInner(id){
-  var h=HIST.h[id]||{},cats=Object.keys(h).filter(function(k){return h[k]>0;});sortCats(cats,h);
-  var tot=cats.reduce(function(s,k){return s+h[k];},0);
-  var rows=cats.length?cats.map(function(k){return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;"><span style="width:12px;height:12px;border-radius:4px;background:'+catColor(k)+';flex-shrink:0;"></span><span style="flex:1;font-size:14px;font-weight:600;">'+esc(k)+'</span><span style="font-size:14px;font-weight:800;color:'+C.greenDeep+';font-variant-numeric:tabular-nums;">×'+h[k]+'</span><button class="btn" data-action="ps-dec" data-id="'+id+'" data-cat="'+esc(k)+'" style="width:30px;height:30px;border-radius:8px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.red+';display:flex;align-items:center;justify-content:center;">'+icon("minus",15)+'</button></div>';}).join(""):'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:22px 0;">這個人還沒有紀錄。</div>';
+  var h=HIST.h[id]||{},G=HIST.g[id]||{},order=["打掃","公差","大公差","小公差","打飯","分菜"];
+  var byG={};Object.keys(h).forEach(function(k){if(h[k]<=0)return;var grp=HIST.cg[k]||deriveGroup(k);(byG[grp]=byG[grp]||[]).push(k);});
+  var tot=total(id);
+  var groups=order.filter(function(g){return byG[g]&&byG[g].length;});Object.keys(byG).forEach(function(g){if(order.indexOf(g)<0)groups.push(g);});
+  var body=groups.length?groups.map(function(g){
+    var col=GCOLORS[g]||C.sub,cats=byG[g].sort(function(a,b){return h[b]-h[a];}),open=!!psOpen[g];
+    var head='<button class="btn" data-action="ps-toggle" data-g="'+esc(g)+'" style="width:100%;display:flex;align-items:center;gap:8px;margin:10px 0 2px;padding:6px 4px;border:none;background:transparent;text-align:left;"><span style="width:10px;height:10px;border-radius:3px;background:'+col+';flex-shrink:0;"></span><span style="font-size:13.5px;font-weight:800;color:'+col+';">'+g+'</span><span style="font-size:11px;color:'+C.sub+';">'+cats.length+' 項</span><span style="font-size:13px;font-weight:800;color:'+col+';margin-left:auto;font-variant-numeric:tabular-nums;">×'+(G[g]||0)+'</span><span style="font-size:11px;color:'+C.sub+';width:14px;text-align:center;">'+(open?"▾":"▸")+'</span></button>';
+    var rows=open?cats.map(function(k){return '<div style="display:flex;align-items:center;gap:10px;padding:6px 4px 6px 22px;"><span style="flex:1;font-size:13.5px;font-weight:600;color:'+C.ink+';">'+esc(k)+'</span><span style="font-size:13.5px;font-weight:800;color:'+C.greenDeep+';font-variant-numeric:tabular-nums;">×'+h[k]+'</span><button class="btn" data-action="ps-dec" data-id="'+id+'" data-cat="'+esc(k)+'" style="width:28px;height:28px;border-radius:8px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.red+';display:flex;align-items:center;justify-content:center;">'+icon("minus",14)+'</button></div>';}).join(""):"";
+    return head+rows;
+  }).join(""):'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:22px 0;">這個人還沒有紀錄。</div>';
   return handleBar()
     +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;">'+badge(personByCode(id).code,28,"green")+'<input data-input="name" data-id="'+id+'" value="'+esc(nameOf(id))+'" style="flex:1;min-width:0;border:none;background:transparent;font-size:16px;font-weight:800;color:'+C.ink+';outline:none;padding:0;" />'+xBtn()+'</div>'
-    +'<div style="display:flex;align-items:baseline;gap:4px;margin:0 4px 6px;"><span style="font-size:24px;font-weight:800;color:'+C.greenDeep+';">'+tot+'</span><span style="font-size:12px;color:'+C.sub+';">次總計</span></div>'
-    +'<div class="sheet-list" style="max-height:40vh;overflow-y:auto;">'+rows+'</div>'
+    +'<div style="display:flex;align-items:baseline;gap:4px;margin:0 4px 2px;"><span style="font-size:24px;font-weight:800;color:'+C.greenDeep+';">'+tot+'</span><span style="font-size:12px;color:'+C.sub+';">次總計 · 點群組看細項</span></div>'
+    +'<div class="sheet-list" style="max-height:44vh;overflow-y:auto;">'+body+'</div>'
     +'<div style="display:flex;gap:8px;margin-top:12px;"><button class="btn" data-action="ps-clear" data-id="'+id+'" style="flex:0 0 auto;padding:13px 14px;border-radius:12px;border:1px solid '+C.redSoft+';background:'+C.redSoft+';color:'+C.red+';font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:5px;">'+icon("trash",15)+' 清空此人</button><button class="btn" data-action="close-sheet" style="flex:1;padding:13px;border-radius:12px;border:none;background:'+C.green+';color:#fff;font-weight:800;font-size:15px;">完成</button></div>';
 }
 function absenceInner(){
@@ -656,7 +696,7 @@ function attachDrag(el){
   handle.onpointerup=function(e){if(!dragging)return;dragging=false;var dy=Math.max(0,e.clientY-startY);if(dy>90){closeSheet();}else{el.style.transition="transform .22s ease";el.style.transform="translateY(0)";}};
   handle.onpointercancel=function(){dragging=false;el.style.transition="transform .22s ease";el.style.transform="translateY(0)";};
 }
-function openSheet(type,id){state.sheet={type:type,id:id};pickAdv=false;refreshHist();overlay.innerHTML='<div class="backdrop" data-action="close-sheet"><div class="sheet" data-action="noop">'+sheetInner()+'</div></div>';attachDrag(overlay.querySelector('.sheet'));}
+function openSheet(type,id){state.sheet={type:type,id:id};pickAdv=false;if(type==="person")psOpen={};refreshHist();overlay.innerHTML='<div class="backdrop" data-action="close-sheet"><div class="sheet" data-action="noop">'+sheetInner()+'</div></div>';attachDrag(overlay.querySelector('.sheet'));}
 function refreshSheet(){if(!state.sheet){closeSheet();return;}refreshHist();var el=overlay.querySelector('.sheet');if(!el){openSheet(state.sheet.type,state.sheet.id);return;}var lw=el.querySelector('.sheet-list');var sc=lw?lw.scrollTop:0;el.innerHTML=sheetInner();var lw2=el.querySelector('.sheet-list');if(lw2)lw2.scrollTop=sc;attachDrag(el);}
 function closeSheet(){overlay.innerHTML="";state.sheet=null;render();}
 
@@ -725,27 +765,70 @@ function livePlan(){
   });
   (state.guard&&state.guard.days?state.guard.days:[]).forEach(function(day){
     if(day.date!==date.replace(/[\uff08(].*$/,""))return;
-    day.shifts.forEach(function(sh){if(!sh.assigned.length)return;events.push({range:sh.code,min:toMin(sh.code),label:"\u7ad9\u54e8"+(sh.loc||""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});
+    day.shifts.forEach(function(sh){if(!sh.assigned.length)return;events.push({range:guardRange(sh.code),min:toMin(sh.code.slice(0,2)+"00"),label:"\u7ad9\u54e8 "+shiftHM(sh.code)+(sh.loc?(" "+sh.loc):""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});
   });
   var mdOnly=date.replace(/[\uff08(].*$/,""),rests=[],outs=[];
   PEOPLE.forEach(function(p){var rec=absenceRec(p.id,mdOnly);if(!rec)return;if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});
   return {date:date,weekday:wm?wm[1]:"",schedule:effectiveSchedule(),events:events,rests:rests,outs:outs};
 }
 function liveHasData(){var lp=livePlan();return (state.schedule&&state.schedule.loaded)||lp.events.length>0||(lp.rests&&lp.rests.length>0)||(lp.outs&&lp.outs.length>0);}
+function importSlotTime(cat,group){
+  if(group==="打飯")return /早/.test(cat)?"0600":/午/.test(cat)?"1100":"1700";
+  if(group==="分菜")return /早/.test(cat)?"0430-0630":/中/.test(cat)?"0830-1130":"1500-1730";
+  if(group==="打掃")return /(浴廁|晚)/.test(cat)?"":"0630-0740";
+  return "";
+}
+function boardFromImport(date,entries,wd){
+  var mdOnly=date.replace(/[\uff08(].*$/,""),byCat={},i=0;
+  entries.forEach(function(e){var k=e.g+"|"+e.c;if(!byCat[k])byCat[k]={label:e.c,group:e.g,people:[]};if(byCat[k].people.indexOf(e.p)<0)byCat[k].people.push(e.p);});
+  var duties=Object.keys(byCat).map(function(k){
+    var o=byCat[k],g=o.group,lb=o.label,kind="fill",period="AM",fen=null,extra=null;
+    if(g==="打飯"){kind="meal";period=/早/.test(lb)?"AM":/午/.test(lb)?"NOON":"PM";}
+    else if(g==="分菜"){period="GC";fen=/早/.test(lb)?"AM":/(中|午)/.test(lb)?"NOON":"PM";}
+    else if(g==="大公差"){period="GC";extra="big";}
+    else if(g==="小公差"){period="GC";extra="small";}
+    else if(g==="公差"){period="GC";}
+    else{period="AM";}
+    var d={id:"imp"+(i++),kind:kind,mode:"append",label:lb,time:null,period:period,block:(period==="GC"?null:period),count:o.people.length||1,assigned:o.people.slice(),keepAll:false,removed:false,original:lb+"：",extra:extra,schedTime:importSlotTime(lb,g),timeSrc:"auto"};
+    if(fen)d.fenca=fen;
+    return d;
+  });
+  state.boards[mdOnly]={raw:"（由統計匯入）",meta:[],duties:duties,schedule:{raw:"",items:[],title:"",loaded:false,date:""},wd:wd||"",committed:true,imported:true};
+}
+function planFromImport(date,entries,weekday){
+  var mdOnly=date.replace(/[\uff08(].*$/,""),byCat={};
+  entries.forEach(function(e){var k=e.g+"|"+e.c;if(!byCat[k])byCat[k]={label:e.c,group:e.g,people:[]};if(byCat[k].people.indexOf(e.p)<0)byCat[k].people.push(e.p);});
+  var events=Object.keys(byCat).map(function(k){var o=byCat[k],rng=importSlotTime(o.label,o.group);return {range:rng,min:toMin(rng),label:o.label,group:o.group,people:o.people,keepAll:false};});
+  (state.guard&&state.guard.days?state.guard.days:[]).forEach(function(day){if(day.date!==mdOnly)return;day.shifts.forEach(function(sh){if(!sh.assigned.length)return;events.push({range:guardRange(sh.code),min:toMin(sh.code.slice(0,2)+"00"),label:"\u7ad9\u54e8 "+shiftHM(sh.code)+(sh.loc?(" "+sh.loc):""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});});
+  var rests=[],outs=[];PEOPLE.forEach(function(p){var rec=absenceRec(p.id,mdOnly);if(!rec)return;if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});
+  return {date:mdOnly,weekday:weekday||"",schedule:mkSchedItems(DEFAULT_SCHED),events:events,rests:rests,outs:outs,ts:Date.now()};
+}
 function savePlan(date){var lp=livePlan();if(!lp.events.length&&!(state.schedule&&state.schedule.loaded))return;state.plans[date]={date:date,weekday:lp.weekday,schedule:lp.schedule,events:lp.events,ts:Date.now()};}
-function currentPlan(){
-  var lp=livePlan(),lh=liveHasData(),sel=state.dayView.date;
-  if(sel==="live"||(!sel&&lh))return {plan:lp,isLive:true};
-  if(sel&&state.plans[sel])return {plan:state.plans[sel],isLive:false};
-  var ks=Object.keys(state.plans);
-  if(ks.length){ks.sort(function(a,b){return (state.plans[b].ts||0)-(state.plans[a].ts||0);});return {plan:state.plans[ks[0]],isLive:false};}
-  return {plan:lp,isLive:true};
+function eventsFromDuties(duties){var events=[];(duties||[]).forEach(function(d){if(d.removed)return;var ppl=d.keepAll?PEOPLE.map(function(p){return p.id;}):(d.assigned||[]).slice();if(!ppl.length)return;var rng=d.schedTime||d.time||"";events.push({range:rng,min:toMin(rng),label:d.label,group:planGroup(d),people:ppl,keepAll:!!d.keepAll});});return events;}
+function guardEventsFor(mdOnly){var events=[];(state.guard&&state.guard.days?state.guard.days:[]).forEach(function(day){if(day.date!==mdOnly)return;day.shifts.forEach(function(sh){if(!sh.assigned.length)return;events.push({range:guardRange(sh.code),min:toMin(sh.code.slice(0,2)+"00"),label:"\u7ad9\u54e8 "+shiftHM(sh.code)+(sh.loc?(" "+sh.loc):""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});});return events;}
+function restsOutsFor(mdOnly){var rests=[],outs=[];PEOPLE.forEach(function(p){var rec=absenceRec(p.id,mdOnly);if(!rec)return;if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});return {rests:rests,outs:outs};}
+function planForBoard(date){
+  var mdOnly=(date||"").replace(/[（(].*$/,""),duties,schedule,wd;
+  if(mdOnly&&mdOnly===state.activeDate&&state.gongban.loaded){duties=state.duties;schedule=state.schedule;wd=(state.boards[mdOnly]&&state.boards[mdOnly].wd)||"";}
+  else if(state.boards[mdOnly]){var b=state.boards[mdOnly];duties=b.duties;schedule=b.schedule;wd=b.wd||"";}
+  else if(state.plans[mdOnly])return state.plans[mdOnly];
+  else return null;
+  var ro=restsOutsFor(mdOnly),sch=(schedule&&schedule.loaded&&schedule.items.length)?schedule.items:mkSchedItems(DEFAULT_SCHED);
+  return {date:mdOnly,weekday:wd,schedule:sch,events:eventsFromDuties(duties).concat(guardEventsFor(mdOnly)),rests:ro.rests,outs:ro.outs};
 }
 function dayDates(){
-  var out=[];
-  if(liveHasData()){var lp=livePlan();out.push({key:"live",label:(lp.date||"\u4eca\u65e5")+" \u9032\u884c\u4e2d",live:true});}
-  Object.keys(state.plans).sort(function(a,b){return (state.plans[b].ts||0)-(state.plans[a].ts||0);}).forEach(function(d){out.push({key:d,label:d+(state.plans[d].weekday?"\uff08"+state.plans[d].weekday+"\uff09":""),live:false});});
+  var seen={},out=[];
+  boardDates().forEach(function(d){seen[d]=1;out.push({key:d,label:d+(state.boards[d].wd?"\uff08"+state.boards[d].wd+"\uff09":"")});});
+  Object.keys(state.plans).forEach(function(d){if(seen[d])return;out.push({key:d,label:d+(state.plans[d].weekday?"\uff08"+state.plans[d].weekday+"\uff09":"")});});
+  out.sort(function(a,b){return dnum(b.key)-dnum(a.key);});
   return out;
+}
+function currentPlan(){
+  var sel=state.dayView.date;
+  if(sel){var p=planForBoard(sel);if(p)return {plan:p,isLive:(sel===state.activeDate&&state.gongban.loaded)};}
+  if(state.activeDate&&state.gongban.loaded){var pa=planForBoard(state.activeDate);if(pa)return {plan:pa,isLive:true};}
+  var dds=dayDates();if(dds.length){var p2=planForBoard(dds[0].key);if(p2)return {plan:p2,isLive:(dds[0].key===state.activeDate&&state.gongban.loaded)};}
+  return null;
 }
 var GEN_RE=/(\u8d77\u5e8a|\u5347\u65d7|\u96c6\u5408|\u7528\u9910|\u4e0a\u9910\u5ef3|\u83a2\u5149|\u751f\u547d\u6559\u80b2|\u64cd\u8ab2|\u904b\u52d5|\u904b\u52d5\u6703|\u9ede\u540d|\u5c31\u5bdd|\u71c8\u706b|\u6c34\u96fb|\u5de1\u67e5|\u52e4\u524d|\u6536\u64cd|\u9867\u88dd|\u5f85\u547d|\u5c04\u64ca|\u958b\u5eab|\u53d6\u88dd|\u9001\u88dd|\u5b9a\u4fdd|\u5ea7\u8ac7)/;
 function modeA(plan){
@@ -782,7 +865,7 @@ function modeB(plan){
     if(freeIds.length&&(evs.length||restIds.length||isGen)){
       freeLine='<div style="display:flex;align-items:flex-start;gap:7px;margin-top:7px;"><span style="width:8px;height:8px;border-radius:999px;background:'+C.line+';flex-shrink:0;margin-top:4px;"></span><span style="font-size:12px;font-weight:700;color:'+C.sub+';flex-shrink:0;">'+(isGen?"\u8ddf\u8ab2\u8868":"\u5f85\u547d")+'</span><span style="font-size:12px;color:'+C.sub+';">'+freeIds.map(function(id){return esc(nameOf(id));}).join("\u3001")+'</span></div>';
     }
-    var head='<div style="display:flex;align-items:baseline;gap:9px;"><span style="font-size:15px;font-weight:800;color:'+C.greenDeep+';font-variant-numeric:tabular-nums;flex-shrink:0;">'+esc(hmFmt(s.range))+'</span><span style="font-size:12.5px;color:'+C.sub+';line-height:1.4;">'+esc(s.text||"")+'</span></div>';
+    var head='<div style="display:flex;align-items:baseline;gap:9px;"><span style="font-size:15px;font-weight:800;color:'+C.greenDeep+';font-variant-numeric:tabular-nums;flex-shrink:0;">'+esc(fmtSpan(s.range))+'</span><span style="font-size:12.5px;color:'+C.sub+';line-height:1.4;">'+esc(s.text||"")+'</span></div>';
     out+=card(head+evLines+restLine+freeLine,"margin-bottom:9px;");
   });
   if(untimed.length){
@@ -803,9 +886,10 @@ function schedCard(){
 function dayPage(){
   var dates=dayDates();
   if(!dates.length)return '<div style="text-align:center;color:'+C.sub+';font-size:13.5px;padding:44px 16px;line-height:1.8;">\u9084\u6c92\u6709\u884c\u7a0b\u3002<br>\u5230<b>\u6392\u73ed</b>\u9801\u8cbc\u4e0a\u300c\u884c\u52d5\u6e96\u5247\u300d\u4e26\u6392\u597d\u52e4\u52d9\uff0c<br>\u9019\u88e1\u5c31\u6703\u986f\u793a\u7576\u5929\u6d41\u7a0b\u8207\u516b\u4eba\u5206\u5de5\u3002</div>';
-  var cp=currentPlan(),plan=cp.plan,mode=state.dayView.mode||"A";
-  var selKey=cp.isLive?"live":plan.date;
-  var chipRow='<div style="display:flex;gap:7px;overflow-x:auto;padding:2px 2px 10px;-webkit-overflow-scrolling:touch;">'+dates.map(function(c){var on=c.key===selKey||(state.dayView.date===c.key);return '<button class="btn" data-action="day-date" data-d="'+esc(c.key)+'" style="flex:0 0 auto;padding:6px 13px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid '+(on?C.green:C.line)+';background:'+(on?C.greenSoft:C.surface)+';color:'+(on?C.greenDeep:C.sub)+';white-space:nowrap;">'+esc(c.label)+'</button>';}).join("")+'</div>';
+  var cp=currentPlan();if(!cp)return '<div style="text-align:center;color:'+C.sub+';font-size:13.5px;padding:44px 16px;">\u9078\u4e00\u5929\u770b\u770b\u3002</div>';
+  var plan=cp.plan,mode=state.dayView.mode||"A";
+  var selKey=plan.date;
+  var chipRow='<div style="display:flex;gap:7px;overflow-x:auto;padding:2px 2px 10px;-webkit-overflow-scrolling:touch;">'+dates.map(function(c){var on=c.key===selKey;return '<button class="btn" data-action="day-date" data-d="'+esc(c.key)+'" style="flex:0 0 auto;padding:6px 13px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid '+(on?C.green:C.line)+';background:'+(on?C.greenSoft:C.surface)+';color:'+(on?C.greenDeep:C.sub)+';white-space:nowrap;">'+esc(c.label)+(c.key===state.activeDate&&state.gongban.loaded?" ·排":"")+'</button>';}).join("")+'</div>';
   var toggle='<div style="display:flex;gap:5px;background:'+C.line+';padding:3px;border-radius:12px;margin-bottom:12px;">'+[["A","\u7576\u5929\u6d41\u7a0b"],["B","\u516b\u4eba\u5206\u5de5"]].map(function(mm){var on=mode===mm[0];return '<button class="btn" data-action="day-mode" data-m="'+mm[0]+'" style="flex:1;padding:9px 0;border-radius:9px;font-size:13.5px;font-weight:800;border:none;background:'+(on?C.surface:"transparent")+';color:'+(on?C.greenDeep:C.sub)+';box-shadow:'+(on?"0 1px 4px rgba(0,0,0,.12)":"none")+';">'+mm[1]+'</button>';}).join("")+'</div>';
   var body=mode==="A"?modeA(plan):(dayLegend()+modeB(plan));
   var statusBar="";
@@ -823,7 +907,7 @@ var root=document.getElementById("root"),navEl=document.getElementById("nav"),fo
 function render(){
   refreshHist();
   var h=header();
-  if(state.page==="board"){h+=pasteCard();if(state.gongban.loaded){syncAvail();h+=schedCard()+availCard()+mealsRow()+fencaRow()+dutyList()+boardActions();if(state.showPreview)h+=previewCard();h+=commitBtn();}}
+  if(state.page==="board"){h+=pasteCard()+boardTabs();if(state.gongban.loaded&&state.boardOpen){var ro=(state.boardMode==="view");if(ro)h+='<div style="margin-top:12px;display:flex;align-items:center;gap:7px;background:'+C.brassSoft+';border:1px solid '+C.brass+';border-radius:11px;padding:9px 13px;color:'+C.amber+';font-weight:700;font-size:12.5px;">'+icon("eye",15,C.brass)+' 閱讀模式：可看不可改，點上面鉛筆切換編輯</div>';syncAvail();h+=schedCard()+availCard()+mealsRow()+fencaRow()+dutyList()+boardActions();if(state.showPreview)h+=previewCard();h+=commitBtn();}}
   else if(state.page==="guard"){h+=guardPage();}
   else if(state.page==="day"){h+=dayPage();}
   else{h+=statsPage();}
@@ -836,6 +920,8 @@ root.addEventListener("input",onInput);overlay.addEventListener("input",onInput)
 
 function handle(a,el){
   var duty=el.getAttribute("data-duty"),pid=el.getAttribute("data-pid"),id=el.getAttribute("data-id"),day=el.getAttribute("data-day"),cat=el.getAttribute("data-cat"),shift=el.getAttribute("data-shift");
+  if(a==="noop")return;
+  if(state.page==="board"&&state.boardMode==="view"&&{"avail":1,"pick-toggle":1,"set-extra":1,"set-time":1,"toggle-adv":1,"count-dec":1,"count-inc":1,"toggle-keepall":1,"del-duty":1,"open-add":1,"af-period":1,"af-extra":1,"af-keepall":1,"af-dec":1,"af-inc":1,"af-add":1,"af-cancel":1,"auto":1,"commit":1,"open-absence":1}[a]){flash("閱讀模式：點上面鉛筆切換編輯");return;}
   if(a==="noop")return;
   else if(a==="go-board"){state.page="board";closeSheet();state.page="board";render();}
   else if(a==="go-guard"){state.page="guard";closeSheet();state.page="guard";render();}
@@ -851,8 +937,11 @@ function handle(a,el){
   else if(a==="gauto"){guardAuto();}
   else if(a==="gcopy"){copyText(buildGuardFilled());}
   else if(a==="gcommit"){guardCommit();}
-  else if(a==="parse"){var txt=(pasteText||"").trim();if(!txt){flash("先把公版貼進來");return;}var r=parseGongban(pasteText);if(!r.duties.length)flash("沒找到含261或打飯的勤務，確認格式");state.gongban={raw:pasteText,meta:r.meta,loaded:true};state.duties=r.duties;autoTagTimes();state.showPaste=false;state.showPreview=false;render();}
+  else if(a==="parse"){var txt=(pasteText||"").trim();if(!txt){flash("先把公版貼進來");return;}var r=parseGongban(pasteText);if(!r.duties.length)flash("沒找到含261或打飯的勤務，確認格式");var pd=extractDate(pasteText)||todayLabel();var pwm=pasteText.match(/[（(]([一二三四五六日])[)）]/);state.gongban={raw:pasteText,meta:r.meta,loaded:true};state.duties=r.duties;state.activeDate=pd;state.boardMode="edit";state.boardOpen=true;autoTagTimes();var bd0=state.boards[pd]||{};bd0.wd=pwm?pwm[1]:(bd0.wd||"");state.boards[pd]=bd0;state.showPaste=false;state.showPreview=false;persist();render();}
   else if(a==="repaste"){state.showPaste=true;pasteText=state.gongban.raw;focusEl="paste";render();}
+  else if(a==="board-load"){if(loadBoard(el.getAttribute("data-d"))){state.boardMode="view";state.boardOpen=true;state.showPaste=false;}render();}
+  else if(a==="board-close"){state.boardOpen=false;state.showPaste=false;render();}
+  else if(a==="board-mode"){state.boardMode=(state.boardMode==="view")?"edit":"view";render();}
   else if(a==="sparse"){var st=(state.schedPaste||"").trim();if(!st){flash("先把行動準則貼進來");return;}var sr=parseSched(state.schedPaste);if(!sr.items.length){flash("沒抓到時間，確認格式");return;}state.schedule={raw:state.schedPaste,items:sr.items,title:sr.title,loaded:true,date:extractDate(state.schedPaste)||""};autoTagTimes();persistLocal();flash("已解析準則，並幫對得上的勤務標了時間");render();}
   else if(a==="srepaste"){state.showSchedPaste=true;state.schedPaste=state.schedule.raw;focusEl="spaste";render();}
   else if(a==="avail"){var aid=parseInt(id,10),cd=curDate();if(absenceRec(aid,cd))clearAbsent(aid,cd);else setAbsent(aid,cd,{reason:"其他",until:""});syncAvail();persist();render();}
@@ -875,6 +964,7 @@ function handle(a,el){
   else if(a==="set-time"){var dt=currentDuty();if(dt){dt.schedTime=el.getAttribute("data-t");dt.timeSrc="manual";}refreshSheet();}
   else if(a==="toggle-adv"){pickAdv=!pickAdv;refreshSheet();}
   else if(a==="ps-dec"){removeOne(parseInt(id,10),cat);persist();refreshSheet();}
+  else if(a==="ps-toggle"){var pg=el.getAttribute("data-g");psOpen[pg]=!psOpen[pg];refreshSheet();}
   else if(a==="ps-clear"){clearPerson(parseInt(id,10));persist();closeSheet();flash("已清空該人紀錄");}
   else if(a==="auto"){autoAssign();}
   else if(a==="copy-filled"){copyText(buildFilled());}
@@ -891,8 +981,8 @@ function handle(a,el){
   else if(a==="af-add"){var f=state.addForm;var nm=(f.name||"").trim();if(!nm){flash("先幫勤務取個名字");return;}state.duties.push({id:"m"+Date.now(),kind:"manual",mode:"append",label:nm,time:null,period:f.period,block:(f.period==="GC"?null:f.period),count:f.keepAll?0:Math.max(1,f.count),assigned:[],keepAll:f.keepAll,removed:false,extra:f.extra||null,schedTime:f.time||"",timeSrc:f.time?"manual":""});state.addForm={open:false,name:"",period:"AM",count:1,keepAll:false,extra:null,time:""};render();}
   else if(a==="open-import"){state.importOpen=true;focusEl="import";render();}
   else if(a==="cancel-import"){state.importOpen=false;importText="";render();}
-  else if(a==="do-import"){var it=(importText||"").trim();if(!it){flash("先把公版貼進來");return;}var pr=parseFilled(importText);if(!pr.entries.length){flash("沒抓到我們的名字，確認公版已填好名字");return;}state.log.push({id:Date.now(),date:pr.date,entries:pr.entries});persist();state.importOpen=false;importText="";flash("已記錄 "+pr.date+"（"+pr.entries.length+" 人次）");render();}
-  else if(a==="del-day"){var did=parseInt(day,10);state.log=state.log.filter(function(e){return e.id!==did;});persist();flash("已刪除該天紀錄");render();}
+  else if(a==="do-import"){var it=(importText||"").trim();if(!it){flash("先把公版貼進來");return;}var pr=parseFilled(importText);if(!pr.entries.length){flash("沒抓到我們的名字，確認公版已填好名字");return;}var wm=importText.match(/[（(]([一二三四五六日])[)）]/),md=pr.date.replace(/[（(].*$/,"");state.log=state.log.filter(function(e){return String(e.id)!=="b_"+md;});state.log.push({id:"b_"+md,date:md,entries:pr.entries});boardFromImport(pr.date,pr.entries,wm?wm[1]:"");state.plans[md]=planFromImport(pr.date,pr.entries,wm?wm[1]:"");persist();state.importOpen=false;importText="";flash("已記錄 "+md+"（"+pr.entries.length+" 人次）·排班/行程都更新了");render();}
+  else if(a==="del-day"){state.log=state.log.filter(function(e){return String(e.id)!==String(day);});persist();flash("已刪除該天紀錄");render();}
   else if(a==="ask-reset"){state.confirmReset=true;render();}
   else if(a==="open-backup"){state.backupOpen=true;render();}
   else if(a==="open-sync"){state.syncOpen=true;syncInput=state.syncUrl;render();}
