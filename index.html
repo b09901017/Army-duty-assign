@@ -53,6 +53,17 @@ var STORE_KEY="duty-board-v3";
    填好後全隊用同一份 index.html 就會自動連到同一份試算表，App 內不用再輸入網址。
    留空字串則沿用舊的「手動輸入網址」流程，不會壞。 */
 var DEFAULT_SYNC_URL="https://script.google.com/macros/s/AKfycbwDGPUZUg4JTEDHzbcqkSTsIEcbxVMgtrJofsvJu1cOzp3u377k188T7a04HJCRCfRW/exec";
+/* 編輯密碼：預設鎖住＝唯讀。你自己開一次 網址?edit=0000 或點右上「唯讀」輸入密碼即可永久解鎖本機。
+   想換密碼改這一行；想在自己手機切回唯讀預覽，開 網址?edit=lock。 */
+var EDIT_CODE="0000";
+function checkUnlock(){
+  try{
+    var q=((typeof location!=="undefined"&&location.search)||"")+" "+((typeof location!=="undefined"&&location.hash)||"");
+    var m=q.match(/edit=([0-9A-Za-z]+)/);
+    if(m){if(m[1]==="lock"){localStorage.removeItem("duty-edit-ok");return false;}if(m[1]===EDIT_CODE){localStorage.setItem("duty-edit-ok","1");return true;}}
+    return localStorage.getItem("duty-edit-ok")==="1";
+  }catch(e){return false;}
+}
 
 var ICON={plus:'<path d="M12 5v14"/><path d="M5 12h14"/>',minus:'<path d="M5 12h14"/>',x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',check:'<path d="M20 6 9 17l-5-5"/>',rotate:'<path d="M3 12a9 9 0 1 0 9-9 9.7 9.7 0 0 0-6.7 2.7L3 8"/><path d="M3 3v5h5"/>',copy:'<rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',wand:'<path d="M4 20 14 10"/><path d="m17 3 1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"/>',trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',board:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>',chart:'<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/>',lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2.5"/>',pencil:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'};
 function icon(n,s,c){s=s||18;c=c||"currentColor";return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="'+c+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+ICON[n]+'</svg>';}
@@ -109,7 +120,7 @@ var state={
   page:"board",
   showPaste:false,showPreview:false,
   addForm:{open:false,name:"",period:"AM",count:1,keepAll:false,extra:null,time:""},
-  importOpen:false,confirmReset:false,backupOpen:false,showGuardPaste:false,
+  importOpen:false,confirmReset:false,confirmDelDay:"",backupOpen:false,showGuardPaste:false,
   syncUrl:(function(){if(DEFAULT_SYNC_URL&&/script\.google\.com/.test(DEFAULT_SYNC_URL))return DEFAULT_SYNC_URL;try{return localStorage.getItem("duty-sync-url")||"";}catch(e){return "";}})(),
   syncStatus:"",syncOpen:false,
   schedule:(function(){var d=saved&&saved.schedule;return (d&&d.items)?d:{raw:"",items:[],title:"",loaded:false,date:""};})(),
@@ -120,7 +131,8 @@ var state={
   absForm:{reason:"補休",start:"",len:1,range:""},
   boards:(saved&&saved.boards)?saved.boards:{},
   activeDate:(saved&&saved.activeDate)?saved.activeDate:"",
-  boardMode:"edit",boardOpen:false
+  boardMode:"edit",boardOpen:false,
+  readOnly:!checkUnlock()
 };
 (function(){var d=state.activeDate,b=d&&state.boards[d];if(b&&b.duties){state.gongban={raw:b.raw,meta:b.meta,loaded:true};state.duties=b.duties;if(b.schedule&&b.schedule.items)state.schedule=b.schedule;}else{state.activeDate="";}})();
 var pasteText="",importText="",restoreText="",syncInput="";
@@ -133,6 +145,7 @@ var SYNC_KEY="duty-sync-url",pushT=null,lastPushAt=0,pollTimer=null;
 function payload(){return JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,plans:state.plans,absence:state.absence});}
 function syncBadge(){var el=document.getElementById("syncdot");if(el)el.style.background=state.syncStatus==="on"?C.green:state.syncStatus==="err"?C.red:C.line;}
 function pushSync(){
+  if(state.readOnly)return;
   if(!state.syncUrl)return;
   clearTimeout(pushT);
   pushT=setTimeout(function(){
@@ -472,6 +485,16 @@ function copyText(text){
 }
 function removeOne(pid,cat){for(var i=state.log.length-1;i>=0;i--){var e=state.log[i];for(var j=0;j<e.entries.length;j++){if(e.entries[j].p===pid&&e.entries[j].c===cat){e.entries.splice(j,1);if(!e.entries.length)state.log.splice(i,1);return true;}}}return false;}
 function clearPerson(pid){for(var i=state.log.length-1;i>=0;i--){var e=state.log[i];e.entries=e.entries.filter(function(x){return x.p!==pid;});if(!e.entries.length)state.log.splice(i,1);}}
+function delDayAll(date){
+  var md=String(date).replace(/[（(].*$/,"");var lid="b_"+md;
+  state.log=state.log.filter(function(e){return String(e.id)!==lid;});
+  if(state.plans[md])delete state.plans[md];
+  if(state.boards[md])delete state.boards[md];
+  if(state.activeDate===md){state.activeDate="";state.gongban={raw:"",meta:[],loaded:false};state.duties=[];state.boardOpen=false;}
+  if(state.dayView.date===md)state.dayView.date="";
+  state.confirmDelDay="";
+  persist();flash("已刪除 "+md+"（行程＋統計）");render();
+}
 
 /* ---------- 片段 ---------- */
 function badge(code,size,tone){var bg=tone==="mute"?C.line:C.greenDeep,col=tone==="mute"?C.sub:"#fff";return '<span style="width:'+size+'px;height:'+size+'px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:'+bg+';color:'+col+';font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.5px;flex-shrink:0;">'+code+'</span>';}
@@ -484,9 +507,10 @@ function boardTabs(){
   var tags=dates.map(function(d){var on=d===state.activeDate,b=state.boards[d];return '<button class="btn" data-action="board-load" data-d="'+esc(d)+'" style="flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:6px 11px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid '+(on?C.green:C.line)+';background:'+(on?C.greenSoft:C.surface)+';color:'+(on?C.greenDeep:C.sub)+';white-space:nowrap;">'+esc(d)+(b.wd?"（"+esc(b.wd)+"）":"")+(b.committed?icon("check",11,on?C.green:C.sub):"")+'</button>';}).join("");
   return '<div style="margin-top:10px;display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;align-items:center;">'+pencil+tags+'</div>';
 }
-function header(){var d=new Date().toLocaleDateString("zh-TW",{month:"2-digit",day:"2-digit",weekday:"short"});var title=state.page==="board"?"排班板":state.page==="guard"?"排站哨":state.page==="day"?"行程":"統計";var dot=state.syncUrl?'<div style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:'+C.sub+';"><span id="syncdot" style="width:8px;height:8px;border-radius:999px;background:'+(state.syncStatus==="on"?C.green:state.syncStatus==="err"?C.red:C.line)+';"></span>雲端</div>':"";return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><div style="width:36px;height:36px;border-radius:10px;background:'+C.greenDeep+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;">261</div><div><div style="font-size:18px;font-weight:800;">'+title+'</div><div style="font-size:12px;color:'+C.sub+';">'+d+' · 8 員</div></div>'+dot+'</div>';}
+function header(){var d=new Date().toLocaleDateString("zh-TW",{month:"2-digit",day:"2-digit",weekday:"short"});var title=state.page==="board"?"排班板":state.page==="guard"?"排站哨":state.page==="day"?"行程":"統計";var dot=state.syncUrl?'<div style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:'+C.sub+';"><span id="syncdot" style="width:8px;height:8px;border-radius:999px;background:'+(state.syncStatus==="on"?C.green:state.syncStatus==="err"?C.red:C.line)+';"></span>雲端</div>':"";var lock=state.readOnly?'<button class="btn" data-action="unlock" style="margin-left:'+(dot?'8px':'auto')+';display:flex;align-items:center;gap:4px;padding:5px 10px;border-radius:999px;border:1px solid '+C.brass+';background:'+C.brassSoft+';color:'+C.amber+';font-size:11.5px;font-weight:800;">'+icon("lock",12,C.amber)+'唯讀</button>':"";return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><div style="width:36px;height:36px;border-radius:10px;background:'+C.greenDeep+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;">261</div><div><div style="font-size:18px;font-weight:800;">'+title+'</div><div style="font-size:12px;color:'+C.sub+';">'+d+' · 8 員</div></div>'+dot+lock+'</div>';}
 
 function pasteCard(){
+  if(state.readOnly){return card('<div style="display:flex;align-items:center;gap:8px;color:'+C.amber+';font-weight:700;font-size:13px;">'+icon("lock",16,C.amber)+' 唯讀模式</div><div style="font-size:12.5px;color:'+C.sub+';margin-top:6px;line-height:1.6;">你可以看<b>行程</b>、<b>統計</b>、<b>站哨</b>頁。排班的當天分工請看「行程」頁（每人卡片）。<br>要編輯請點右上角「唯讀」輸入密碼解鎖。</div>');}
   var showBox=!state.gongban.loaded||state.showPaste||!state.boardOpen;
   if(showBox){return card(label("貼上今天的公版")+'<textarea data-input="paste" placeholder="把班長給的整份公版貼進來，會自動抓出所有含 261 的勤務和打飯。" style="width:100%;height:120px;margin-top:10px;padding:12px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:13.5px;line-height:1.6;outline:none;resize:vertical;font-family:ui-monospace,Menlo,monospace;">'+esc(pasteText)+'</textarea><button class="btn" data-action="parse" style="width:100%;margin-top:10px;padding:13px;border-radius:11px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:15px;">解析勤務</button>');}
   var n=state.duties.filter(function(d){return !d.removed;}).length;
@@ -564,8 +588,16 @@ function importBlock(){
 }
 function daysBlock(){
   if(!state.log.length)return '';
-  var rows=state.log.slice().sort(function(a,b){return b.id-a.id;}).map(function(e){return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid '+C.line+';border-radius:11px;margin-bottom:7px;background:'+C.surface+';"><div><span style="font-size:14px;font-weight:800;">'+esc(e.date)+'</span><span style="font-size:12px;color:'+C.sub+';margin-left:8px;">'+e.entries.length+' 人次</span></div><button class="btn" data-action="del-day" data-day="'+e.id+'" style="display:flex;align-items:center;gap:5px;border:none;background:transparent;color:'+C.red+';font-weight:700;font-size:12.5px;">'+icon("trash",14)+' 刪這天</button></div>';}).join("");
-  return label("各天紀錄 · 可單獨刪除")+'<div style="margin-top:9px;">'+rows+'</div>';
+  var ro=state.readOnly;
+  var rows=state.log.slice().sort(function(a,b){return dnum(b.date)-dnum(a.date);}).map(function(e){
+    var md=String(e.date).replace(/[（(].*$/,"");
+    var right;
+    if(ro)right="";
+    else if(state.confirmDelDay===md)right='<div style="display:flex;gap:6px;"><button class="btn" data-action="del-day-cancel" style="border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:12px;border-radius:8px;padding:5px 10px;">取消</button><button class="btn" data-action="del-day-go" data-md="'+esc(md)+'" style="border:none;background:'+C.red+';color:#fff;font-weight:700;font-size:12px;border-radius:8px;padding:5px 10px;">確定刪</button></div>';
+    else right='<button class="btn" data-action="del-day-ask" data-md="'+esc(md)+'" style="display:flex;align-items:center;gap:5px;border:none;background:transparent;color:'+C.red+';font-weight:700;font-size:12.5px;">'+icon("trash",14)+' 刪這天</button>';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid '+C.line+';border-radius:11px;margin-bottom:7px;background:'+C.surface+';"><div><span style="font-size:14px;font-weight:800;">'+esc(e.date)+'</span><span style="font-size:12px;color:'+C.sub+';margin-left:8px;">'+e.entries.length+' 人次</span></div>'+right+'</div>';
+  }).join("");
+  return label(ro?"各天紀錄":"各天紀錄 · 刪這天＝行程＋統計一起刪")+'<div style="margin-top:9px;">'+rows+'</div>';
 }
 function backupBlock(){
   if(!state.backupOpen)return '<button class="btn" data-action="open-backup" style="width:100%;margin-top:10px;padding:11px;border-radius:11px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:12.5px;">備份／換手機還原</button>';
@@ -595,7 +627,9 @@ function statsPage(){
   var grid='<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;align-items:start;margin-bottom:16px;">'+PEOPLE.map(statsCard).join("")+'</div>';
   var reset=!state.confirmReset?'<button class="btn" data-action="ask-reset" style="width:100%;margin-top:4px;padding:11px;border-radius:11px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.red+';font-weight:700;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px;">'+icon("rotate",14)+' 清空全部統計</button>':'<div style="display:flex;gap:8px;margin-top:4px;"><button class="btn" data-action="cancel-reset" style="flex:1;padding:11px;border-radius:11px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:12.5px;">取消</button><button class="btn" data-action="do-reset" style="flex:1;padding:11px;border-radius:11px;border:none;background:'+C.red+';color:#fff;font-weight:700;font-size:12.5px;">確定清空</button></div>';
   var legend='<div style="display:flex;flex-wrap:wrap;gap:10px 14px;margin:0 2px 12px;">'+["打掃","公差","大公差","小公差","打飯","分菜"].map(function(g){return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:'+C.ink+';"><span style="width:11px;height:11px;border-radius:3px;background:'+GCOLORS[g]+';"></span>'+g+'</span>';}).join("")+'</div>';
-  return '<div style="font-size:12.5px;color:'+C.sub+';margin:0 2px 8px;">累積共 '+grand+' 人次。點卡片可改名字、扣單項或清空該人。</div>'+legend+grid+syncBlock()+importBlock()+daysBlock()+backupBlock()+reset;
+  var ro=state.readOnly;
+  var hint=ro?'累積共 '+grand+' 人次。點卡片可看每人明細。':'累積共 '+grand+' 人次。點卡片可改名字、扣單項或清空該人。';
+  return '<div style="font-size:12.5px;color:'+C.sub+';margin:0 2px 8px;">'+hint+'</div>'+legend+grid+syncBlock()+(ro?"":importBlock())+daysBlock()+(ro?"":backupBlock())+(ro?"":reset);
 }
 
 /* ---------- 站哨 ---------- */
@@ -959,14 +993,19 @@ function dayPage(){
     rests.forEach(function(r){parts.push('<span style="color:'+C.amber+';font-weight:800;">'+esc(nameOf(r.pid))+' 補休 '+esc(fmtSpan(r.range))+'</span>');});
     statusBar='<div style="background:'+C.surface+';border:1px solid '+C.line+';border-radius:11px;padding:9px 12px;margin-bottom:12px;font-size:12px;line-height:1.7;">'+parts.join('<span style="color:'+C.line+';">　</span>')+'</div>';
   }
-  return chipRow+toggle+statusBar+body;
+  var delBar="";
+  if(!state.readOnly){
+    if(state.confirmDelDay===selKey)delBar='<div style="display:flex;gap:8px;margin-top:16px;"><button class="btn" data-action="del-day-cancel" style="flex:1;padding:11px;border-radius:11px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:13px;">取消</button><button class="btn" data-action="del-day-go" data-md="'+esc(selKey)+'" style="flex:1;padding:11px;border-radius:11px;border:none;background:'+C.red+';color:#fff;font-weight:700;font-size:13px;">確定刪 '+esc(selKey)+'（行程＋統計）</button></div>';
+    else delBar='<button class="btn" data-action="del-day-ask" data-md="'+esc(selKey)+'" style="width:100%;margin-top:16px;padding:11px;border-radius:11px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.red+';font-weight:700;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px;">'+icon("trash",14)+' 刪掉 '+esc(selKey)+' 這天（行程＋統計）</button>';
+  }
+  return chipRow+toggle+statusBar+body+delBar;
 }
 /* ---------- 渲染 ---------- */
 var root=document.getElementById("root"),navEl=document.getElementById("nav"),focusEl=null;
 function render(){
   refreshHist();
   var h=header();
-  if(state.page==="board"){h+=pasteCard()+boardTabs();if(state.gongban.loaded&&state.boardOpen){var ro=(state.boardMode==="view");if(ro)h+='<div style="margin-top:12px;display:flex;align-items:center;gap:7px;background:'+C.brassSoft+';border:1px solid '+C.brass+';border-radius:11px;padding:9px 13px;color:'+C.amber+';font-weight:700;font-size:12.5px;">'+icon("eye",15,C.brass)+' 閱讀模式：可看不可改，點上面鉛筆切換編輯</div>';syncAvail();h+=schedCard()+availCard()+mealsRow()+fencaRow()+dutyList()+boardActions();if(state.showPreview)h+=previewCard();h+=commitBtn();}}
+  if(state.page==="board"){h+=pasteCard()+boardTabs();if(state.gongban.loaded&&state.boardOpen){var ro=(state.boardMode==="view");if(ro)h+='<div style="margin-top:12px;display:flex;align-items:center;gap:7px;background:'+C.brassSoft+';border:1px solid '+C.brass+';border-radius:11px;padding:9px 13px;color:'+C.amber+';font-weight:700;font-size:12.5px;">'+icon("eye",15,C.brass)+' 閱讀模式：可看不可改，點上面鉛筆切換編輯</div>';syncAvail();h+=schedCard()+availCard()+mealsRow()+fencaRow()+dutyList();if(!state.readOnly){h+=boardActions();if(state.showPreview)h+=previewCard();h+=commitBtn();}}}
   else if(state.page==="guard"){h+=guardPage();}
   else if(state.page==="day"){h+=dayPage();}
   else{h+=statsPage();}
@@ -974,12 +1013,14 @@ function render(){
   navEl.innerHTML='<button data-action="go-board" class="'+(state.page==="board"?"on":"")+'">'+icon("board",20)+'排班</button><button data-action="go-guard" class="'+(state.page==="guard"?"on":"")+'">'+icon("shield",20)+'站哨</button><button data-action="go-day" class="'+(state.page==="day"?"on":"")+'">'+icon("calendar",20)+'行程</button><button data-action="go-stats" class="'+(state.page==="stats"?"on":"")+'">'+icon("chart",20)+'統計</button>';
   if(focusEl){var el=root.querySelector('[data-input="'+focusEl+'"]');if(el)el.focus();focusEl=null;}
 }
-function onInput(e){var t=e.target;if(!t.getAttribute)return;var k=t.getAttribute("data-input");if(!k)return;if(k==="paste")pasteText=t.value;else if(k==="import")importText=t.value;else if(k==="restore")restoreText=t.value;else if(k==="syncurl")syncInput=t.value;else if(k==="gpaste")state.guardPaste=t.value;else if(k==="af-name")state.addForm.name=t.value;else if(k==="af-time")state.addForm.time=t.value;else if(k==="spaste")state.schedPaste=t.value;else if(k==="abs-start")state.absForm.start=t.value;else if(k==="abs-range")state.absForm.range=t.value;else if(k==="dtime"){var cd=currentDuty();if(cd){cd.schedTime=t.value;cd.timeSrc="manual";}}else if(k==="name"){state.names[t.getAttribute("data-id")]=t.value;persist();}}
+function onInput(e){var t=e.target;if(!t.getAttribute)return;if(state.readOnly)return;var k=t.getAttribute("data-input");if(!k)return;if(k==="paste")pasteText=t.value;else if(k==="import")importText=t.value;else if(k==="restore")restoreText=t.value;else if(k==="syncurl")syncInput=t.value;else if(k==="gpaste")state.guardPaste=t.value;else if(k==="af-name")state.addForm.name=t.value;else if(k==="af-time")state.addForm.time=t.value;else if(k==="spaste")state.schedPaste=t.value;else if(k==="abs-start")state.absForm.start=t.value;else if(k==="abs-range")state.absForm.range=t.value;else if(k==="dtime"){var cd=currentDuty();if(cd){cd.schedTime=t.value;cd.timeSrc="manual";}}else if(k==="name"){state.names[t.getAttribute("data-id")]=t.value;persist();}}
 root.addEventListener("input",onInput);overlay.addEventListener("input",onInput);
 
 function handle(a,el){
   var duty=el.getAttribute("data-duty"),pid=el.getAttribute("data-pid"),id=el.getAttribute("data-id"),day=el.getAttribute("data-day"),cat=el.getAttribute("data-cat"),shift=el.getAttribute("data-shift");
   if(a==="noop")return;
+  if(a==="unlock"){var code=null;try{code=window.prompt("輸入編輯密碼解鎖");}catch(e){}if(code===null)return;if(code===EDIT_CODE){try{localStorage.setItem("duty-edit-ok","1");}catch(e){}state.readOnly=false;flash("已解鎖，可以編輯了");render();}else{flash("密碼不對");}return;}
+  if(state.readOnly){var VIEW_OK={"go-board":1,"go-guard":1,"go-day":1,"go-stats":1,"day-mode":1,"day-date":1,"board-load":1,"board-close":1,"open-person":1,"ps-toggle":1,"close-sheet":1,"toggle-preview":1,"copy-filled":1,"copy-persons":1,"gcopy":1,"copy-backup":1,"pull-now":1};if(!VIEW_OK[a]){flash("唯讀模式：只能看，無法修改");return;}}
   if(state.page==="board"&&state.boardMode==="view"&&{"avail":1,"pick-toggle":1,"set-extra":1,"set-time":1,"toggle-adv":1,"count-dec":1,"count-inc":1,"toggle-keepall":1,"del-duty":1,"open-add":1,"af-period":1,"af-extra":1,"af-keepall":1,"af-dec":1,"af-inc":1,"af-add":1,"af-cancel":1,"auto":1,"commit":1,"open-absence":1}[a]){flash("閱讀模式：點上面鉛筆切換編輯");return;}
   if(a==="noop")return;
   else if(a==="go-board"){state.page="board";closeSheet();state.page="board";render();}
@@ -1041,7 +1082,9 @@ function handle(a,el){
   else if(a==="open-import"){state.importOpen=true;focusEl="import";render();}
   else if(a==="cancel-import"){state.importOpen=false;importText="";render();}
   else if(a==="do-import"){var it=(importText||"").trim();if(!it){flash("先把公版貼進來");return;}var pr=parseFilled(importText);if(!pr.entries.length){flash("沒抓到我們的名字，確認公版已填好名字");return;}var wm=importText.match(/[（(]([一二三四五六日])[)）]/),md=pr.date.replace(/[（(].*$/,"");state.log=state.log.filter(function(e){return String(e.id)!=="b_"+md;});state.log.push({id:"b_"+md,date:md,entries:pr.entries});boardFromImport(pr.date,pr.entries,wm?wm[1]:"");state.plans[md]=planFromImport(pr.date,pr.entries,wm?wm[1]:"");persist();state.importOpen=false;importText="";flash("已記錄 "+md+"（"+pr.entries.length+" 人次）·排班/行程都更新了");render();}
-  else if(a==="del-day"){state.log=state.log.filter(function(e){return String(e.id)!==String(day);});persist();flash("已刪除該天紀錄");render();}
+  else if(a==="del-day-ask"){state.confirmDelDay=el.getAttribute("data-md");render();}
+  else if(a==="del-day-cancel"){state.confirmDelDay="";render();}
+  else if(a==="del-day-go"){delDayAll(el.getAttribute("data-md"));}
   else if(a==="ask-reset"){state.confirmReset=true;render();}
   else if(a==="open-backup"){state.backupOpen=true;render();}
   else if(a==="open-sync"){state.syncOpen=true;syncInput=state.syncUrl;render();}
