@@ -46,9 +46,8 @@ function doPost(e) {
     if (e && e.postData && e.postData.contents) {
       var raw = e.postData.contents;
       var prev = read_();
-      var ds = dataSheet_();
-      ds.getRange("A1").setValue(raw);
-      ds.getRange("C1").setValue("← A1 是 App 復原碼（自動更新，請勿手改）").setFontColor(SUB);
+      write_(raw);
+      dataSheet_().getRange("C1").setValue("← A 欄是 App 復原碼（自動更新、可能分成多格，請勿手改）").setFontColor(SUB);
       if (raw !== prev) { try { rebuild_(JSON.parse(raw)); } catch (err2) { logStatus_(["rebuild 例外：" + err2]); } }
     }
     return json_('{"ok":true}');
@@ -64,7 +63,22 @@ function dataSheet_() {
   if (!sh) { sh = ss.insertSheet(DATA_SHEET, 0); }
   return sh;
 }
-function read_() { var v = dataSheet_().getRange("A1").getValue(); return v ? String(v) : "{}"; }
+/* A 欄分片存放：Google 試算表單格上限 50000 字元，排班板資料會超過，故切成多格 */
+var CHUNK = 40000, MAX_CHUNKS = 30;
+function read_() {
+  var ds = dataSheet_(), vals = ds.getRange(1, 1, MAX_CHUNKS, 1).getValues(), s = "";
+  for (var i = 0; i < vals.length; i++) { var v = vals[i][0]; if (v === "" || v === null) break; s += String(v); }
+  return s ? s : "{}";
+}
+function write_(raw) {
+  var ds = dataSheet_(), parts = [];
+  for (var i = 0; i < raw.length; i += CHUNK) parts.push([raw.substr(i, CHUNK)]);
+  if (parts.length > MAX_CHUNKS) throw new Error("資料過大：" + raw.length + " 字元");
+  var rng = ds.getRange(1, 1, MAX_CHUNKS, 1);
+  rng.setNumberFormat("@");                       // 純文字，避免被當公式或數字
+  while (parts.length < MAX_CHUNKS) parts.push([""]);  // 清掉上次殘留的舊分片
+  rng.setValues(parts);
+}
 function logStatus_(lines) {
   try {
     dataSheet_().getRange("E1").setValue("更新 " + stamp_() + "\n" + lines.join("\n"))
@@ -428,8 +442,8 @@ function buildAbsence_(obj, names) {
   sh.setFrozenRows(2); tidyCols_(sh, W);
 }
 
-/* ================= 手動：用目前 data!A1 立即重建全部分頁 ================= */
+/* ================= 手動：用目前 data!A 欄立即重建全部分頁 ================= */
 function rebuildFromData() {
   try { rebuild_(JSON.parse(read_())); }
-  catch (e) { throw new Error("data!A1 不是有效 JSON：" + e); }
+  catch (e) { throw new Error("data!A 欄不是有效 JSON：" + e); }
 }

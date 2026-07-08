@@ -137,14 +137,45 @@ var state={
 };
 (function(){var d=state.activeDate,b=d&&state.boards[d];if(b&&b.duties){state.gongban={raw:b.raw,meta:b.meta,loaded:true};state.duties=b.duties;if(b.schedule&&b.schedule.items)state.schedule=b.schedule;}else{state.activeDate="";}})();
 var pasteText="",importText="",restoreText="",syncInput="";
-function saveBoard(){if(!state.activeDate||!state.gongban.loaded)return;var prev=state.boards[state.activeDate];state.boards[state.activeDate]={raw:state.gongban.raw,meta:state.gongban.meta,duties:state.duties,schedule:state.schedule,committed:(prev&&prev.committed)||false,wd:(prev&&prev.wd)||""};}
-function loadBoard(date){saveBoard();var b=state.boards[date];if(!b)return false;state.gongban={raw:b.raw,meta:b.meta,loaded:true};state.duties=b.duties;state.schedule=(b.schedule&&b.schedule.items)?b.schedule:{raw:"",items:[],title:"",loaded:false,date:""};state.activeDate=date;return true;}
+function saveBoard(){if(!state.activeDate||!state.gongban.loaded)return;var prev=state.boards[state.activeDate];state.boards[state.activeDate]={raw:state.gongban.raw||"",meta:state.gongban.meta,duties:state.duties,schedule:state.schedule,committed:(prev&&prev.committed)||false,wd:(prev&&prev.wd)||"",imported:!!(prev&&prev.imported)};}
+function loadBoard(date){saveBoard();var b=state.boards[date];if(!b)return false;state.gongban={raw:b.raw||"",meta:b.meta||[],loaded:true};state.duties=b.duties;state.schedule=(b.schedule&&b.schedule.items)?b.schedule:{raw:"",items:[],title:"",loaded:false,date:""};state.activeDate=date;return true;}
 function boardDates(){return Object.keys(state.boards).sort(function(a,b){return dnum(a)-dnum(b);});}
 function persistLocal(){try{saveBoard();localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,schedule:state.schedule,plans:state.plans,absence:state.absence,boards:state.boards,activeDate:state.activeDate}));}catch(e){}}
 function persist(){persistLocal();pushSync();}
 var SYNC_KEY="duty-sync-url",pushT=null,lastPushAt=0,pollTimer=null;
-function payload(){return JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,plans:state.plans,absence:state.absence});}
+function slimBoards(){
+  var out={};
+  for(var d in state.boards){var b=state.boards[d];if(!b)continue;
+    var sc=b.schedule||{};
+    out[d]={meta:b.meta||[],duties:b.duties||[],wd:b.wd||"",committed:!!b.committed,imported:!!b.imported,
+      schedule:{items:(sc.items||[]),title:sc.title||"",date:sc.date||"",loaded:!!(sc.items&&sc.items.length)}};
+  }
+  return out;
+}
+function mergeBoards(rem){
+  // 以雲端為準；本機若有同一天的原文（raw），保留下來供編輯者預覽／重新貼上
+  var out={};
+  for(var d in rem){var r=rem[d];if(!r)continue;
+    var loc=state.boards[d],sc=r.schedule||{};
+    out[d]={meta:r.meta||[],duties:r.duties||[],wd:r.wd||"",committed:!!r.committed,imported:!!r.imported,
+      raw:(loc&&loc.raw)||"",
+      schedule:{items:sc.items||[],title:sc.title||"",date:sc.date||"",loaded:!!(sc.items&&sc.items.length),raw:(loc&&loc.schedule&&loc.schedule.raw)||""}};
+  }
+  return out;
+}
+function payload(){return JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,plans:state.plans,absence:state.absence,boards:slimBoards()});}
 function syncBadge(){var el=document.getElementById("syncdot");if(el)el.style.background=state.syncStatus==="on"?C.green:state.syncStatus==="err"?C.red:C.line;}
+function pushNow(){
+  if(state.readOnly){flash("唯讀模式無法上傳");return;}
+  if(!state.syncUrl){flash("尚未連線雲端");return;}
+  saveBoard();
+  var body=payload(),n=Object.keys(state.boards).length;
+  flash("上傳中…（"+n+" 天排班板）");
+  lastPushAt=Date.now();
+  fetch(state.syncUrl,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:body})
+    .then(function(){state.syncStatus="on";syncBadge();flash("已備份到雲端："+n+" 天排班板＋行程");})
+    .catch(function(){state.syncStatus="err";syncBadge();flash("上傳失敗，檢查網路後再試");});
+}
 function pushSync(){
   if(state.readOnly)return;
   if(!state.syncUrl)return;
@@ -156,10 +187,17 @@ function pushSync(){
 }
 function applyRemote(o){
   if(!o||!o.names)return false;
-  var rem=JSON.stringify({names:o.names,log:o.log||[],mealQueue:(o.mealQueue&&o.mealQueue.length===8)?o.mealQueue:state.mealQueue,guard:o.guard||state.guard,guardTally:o.guardTally||state.guardTally,plans:o.plans||state.plans,absence:o.absence||state.absence});
-  var cur=JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,plans:state.plans,absence:state.absence});
+  var rem=JSON.stringify({names:o.names,log:o.log||[],mealQueue:(o.mealQueue&&o.mealQueue.length===8)?o.mealQueue:state.mealQueue,guard:o.guard||state.guard,guardTally:o.guardTally||state.guardTally,plans:o.plans||state.plans,absence:o.absence||state.absence,boards:o.boards||slimBoards()});
+  var cur=JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,plans:state.plans,absence:state.absence,boards:slimBoards()});
   if(rem===cur)return false;
   state.names=o.names;if(o.log)state.log=o.log;if(o.mealQueue&&o.mealQueue.length===8)state.mealQueue=o.mealQueue;if(o.guard)state.guard=o.guard;if(o.guardTally)state.guardTally=o.guardTally;if(o.plans)state.plans=o.plans;if(o.absence)state.absence=o.absence;
+  if(o.boards){
+    state.boards=mergeBoards(o.boards);
+    // 讓「編輯中的那天」跟著雲端走，否則等一下 saveBoard() 會用舊資料蓋回去
+    var ad=state.activeDate,b=ad&&state.boards[ad];
+    if(b){state.gongban={raw:b.raw||"",meta:b.meta||[],loaded:true};state.duties=b.duties;if(b.schedule&&b.schedule.items.length)state.schedule=b.schedule;}
+    else if(ad){state.activeDate="";state.gongban={raw:"",meta:[],loaded:false};state.duties=[];}
+  }
   persistLocal();return true;
 }
 function pullSync(){
@@ -639,7 +677,9 @@ function syncBlock(){
   if(bakedUrl()){
     var bon=state.syncStatus==="on",ber=state.syncStatus==="err";
     var bcol=bon?C.green:ber?C.red:C.sub,btxt=bon?"已連線 · 每 20 秒自動同步 · 全隊共用同一份":ber?"連線異常，稍後自動重試":"連線中…";
-    return card('<div style="display:flex;align-items:center;gap:8px;"><span style="width:9px;height:9px;border-radius:999px;background:'+bcol+';"></span><span style="font-size:13px;font-weight:700;color:'+bcol+';">'+btxt+'</span><span style="margin-left:auto;">'+icon("check",15,C.green)+'</span></div><button class="btn" data-action="pull-now" style="width:100%;margin-top:10px;padding:10px;border-radius:10px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.green+';font-weight:700;font-size:13px;">立即同步</button>',"margin-top:10px;");
+    var nb=Object.keys(state.boards).length;
+    var upBtn=state.readOnly?"":'<button class="btn" data-action="push-now" style="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid '+C.brass+';background:'+C.brassSoft+';color:'+C.amber+';font-weight:800;font-size:13px;">↑ 立即備份到雲端（'+nb+' 天排班板＋行程）</button>';
+    return card('<div style="display:flex;align-items:center;gap:8px;"><span style="width:9px;height:9px;border-radius:999px;background:'+bcol+';"></span><span style="font-size:13px;font-weight:700;color:'+bcol+';">'+btxt+'</span><span style="margin-left:auto;">'+icon("check",15,C.green)+'</span></div><button class="btn" data-action="pull-now" style="width:100%;margin-top:10px;padding:10px;border-radius:10px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.green+';font-weight:700;font-size:13px;">立即同步</button>'+upBtn,"margin-top:10px;");
   }
   if(!state.syncUrl&&!state.syncOpen)return '<button class="btn" data-action="open-sync" style="width:100%;margin-top:10px;padding:11px;border-radius:11px;border:1.5px dashed '+C.green+';background:transparent;color:'+C.green+';font-weight:700;font-size:12.5px;">☁ 設定雲端同步（多人共用同一份）</button>';
   if(state.syncUrl&&!state.syncOpen){
@@ -1224,6 +1264,7 @@ function handle(a,el){
   else if(a==="connect-sync"){connectSync(syncInput||state.syncUrl);}
   else if(a==="disconnect-sync"){disconnectSync();}
   else if(a==="pull-now"){flash("同步中…");pullSync();}
+  else if(a==="push-now"){pushNow();}
   else if(a==="close-backup"){state.backupOpen=false;restoreText="";render();}
   else if(a==="copy-backup"){copyText(JSON.stringify({v:3,names:state.names,log:state.log,mealQueue:state.mealQueue}));}
   else if(a==="do-restore"){var rt=(restoreText||"").trim();if(!rt){flash("先貼上備份碼");return;}try{var o=JSON.parse(rt);if(o.names)state.names=o.names;if(o.log)state.log=o.log;if(o.mealQueue&&o.mealQueue.length===8)state.mealQueue=o.mealQueue;persist();state.backupOpen=false;restoreText="";flash("已還原備份");render();}catch(err){flash("備份碼格式不對");}}
