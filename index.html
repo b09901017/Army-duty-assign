@@ -526,7 +526,9 @@ function boardTabs(){
     else{ago=Math.round((tt-wk.t)/(7*DAY));wlab=ago===0?"本週":ago===1?"上週":ago===2?"上上週":(ago>2?ago+"週前":(wk.mon.getMonth()+1)+"/"+wk.mon.getDate()+" 那週");}
     var tag='<span style="flex:0 0 auto;font-size:11px;font-weight:800;color:'+(ago===0?C.green:C.sub)+';background:'+(ago===0?C.greenSoft:C.bg)+';border:1px solid '+(ago===0?C.green:C.line)+';border-radius:8px;padding:4px 8px;white-space:nowrap;">'+wlab+'</span>';
     var chips=wk.items.map(chip).join("");
-    return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:'+(ri===0?"0":"7")+'px;">'+(ri===0?pencil:"")+tag+chips+'</div>';
+    var left='<div style="flex:0 0 auto;display:flex;gap:6px;align-items:center;">'+(ri===0?pencil:"")+tag+'</div>';
+    var scroller='<div style="flex:1;min-width:0;display:flex;gap:6px;align-items:center;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;">'+chips+'</div>';
+    return '<div style="display:flex;gap:6px;align-items:center;margin-top:'+(ri===0?"0":"8")+'px;">'+left+scroller+'</div>';
   }).join("");
   return '<div style="margin-top:10px;padding-bottom:2px;">'+rows+'</div>';
 }
@@ -655,14 +657,20 @@ function statsPage(){
   var legend='<div style="display:flex;flex-wrap:wrap;gap:10px 14px;margin:0 2px 12px;">'+["打掃","公差","大公差","小公差","打飯","分菜"].map(function(g){return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:'+C.ink+';"><span style="width:11px;height:11px;border-radius:3px;background:'+GCOLORS[g]+';"></span>'+g+'</span>';}).join("")+'</div>';
   var ro=state.readOnly;
   var hint=ro?'累積共 '+grand+' 人次。點卡片可看每人明細。':'累積共 '+grand+' 人次。點卡片可改名字、扣單項或清空該人。';
-  return '<div style="font-size:12.5px;color:'+C.sub+';margin:0 2px 8px;">'+hint+'</div>'+legend+grid+syncBlock()+(ro?"":importBlock())+daysBlock()+(ro?"":backupBlock())+(ro?"":reset);
+  var top='<div style="font-size:12.5px;color:'+C.sub+';margin:0 2px 8px;">'+hint+'</div>'+legend+grid;
+  if(ro)return top;
+  return top+syncBlock()+importBlock()+daysBlock()+backupBlock()+reset;
 }
 
 /* ---------- 站哨 ---------- */
 function guardPaste_(){return card(label("貼上本週衛哨公版")+'<textarea data-input="gpaste" placeholder="把班長的衛哨表整份貼進來（含日期與 2402、1214 這種時段）。" style="width:100%;height:150px;margin-top:10px;padding:12px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:13.5px;line-height:1.6;outline:none;resize:vertical;font-family:ui-monospace,Menlo,monospace;">'+esc(state.guardPaste)+'</textarea><button class="btn" data-action="gparse" style="width:100%;margin-top:10px;padding:13px;border-radius:11px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:15px;">解析站哨</button>');}
 function guardRow(sh){
-  var filled=sh.assigned.length>0,who=filled?sh.assigned.map(function(id){return '<span style="font-weight:700;color:'+C.greenDeep+';">'+esc(nameOf(id))+'</span>';}).join("、"):'<span style="color:'+C.sub+';font-size:12.5px;">點我指派</span>';
-  return '<button class="btn" data-action="gpick" data-shift="'+sh.id+'" style="width:100%;display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;border:1px solid '+(filled?C.green:C.line)+';background:'+(filled?C.greenSoft:C.surface)+';margin-bottom:7px;text-align:left;"><span style="flex-shrink:0;font-variant-numeric:tabular-nums;font-weight:800;color:'+C.ink+';font-size:14px;">'+esc(sh.code)+'</span><span style="flex-shrink:0;font-size:11.5px;color:'+C.sub+';">'+shiftHM(sh.code)+esc(sh.loc||"")+'</span><span style="flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+who+'</span></button>';
+  var ro=state.readOnly,filled=sh.assigned.length>0;
+  var who=filled?sh.assigned.map(function(id){return '<span style="font-weight:700;color:'+C.greenDeep+';">'+esc(nameOf(id))+'</span>';}).join("、"):'<span style="color:'+C.sub+';font-size:12.5px;">'+(ro?"未排":"點我指派")+'</span>';
+  var inner='<span style="flex-shrink:0;font-variant-numeric:tabular-nums;font-weight:800;color:'+C.ink+';font-size:14px;">'+esc(sh.code)+'</span><span style="flex-shrink:0;font-size:11.5px;color:'+C.sub+';">'+shiftHM(sh.code)+esc(sh.loc||"")+'</span><span style="flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+who+'</span>';
+  var st='width:100%;display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;border:1px solid '+(filled?C.green:C.line)+';background:'+(filled?C.greenSoft:C.surface)+';margin-bottom:7px;text-align:left;';
+  if(ro)return '<div style="'+st+'">'+inner+'</div>';
+  return '<button class="btn" data-action="gpick" data-shift="'+sh.id+'" style="'+st+'">'+inner+'</button>';
 }
 function guardStats(){
   var ro=state.readOnly;
@@ -684,6 +692,17 @@ function guardStats(){
   return card(label("站哨累積次數"+(ro?"":" · 可 −／＋ 調整"))+'<div style="margin-top:8px;">'+rows+'</div>'+clearBtn,"margin-top:14px;");
 }
 function guardPage(){
+  if(state.readOnly){
+    var okDays=(state.guard.loaded?state.guard.days:[]).filter(function(d){return d.shifts&&d.shifts.length;});
+    if(!state.guard.loaded||!okDays.length||!guardCount())
+      return '<div style="text-align:center;color:'+C.sub+';font-size:13.5px;padding:48px 16px;line-height:1.8;">本週還沒有排站哨。</div>';
+    var rh='<div style="display:flex;align-items:center;gap:8px;background:'+C.greenSoft+';border:1px solid '+C.green+';border-radius:12px;padding:11px 14px;margin-bottom:2px;color:'+C.greenDeep+';font-weight:800;font-size:14px;">'+icon("shield",16,C.green)+' 本週站哨</div>';
+    okDays.forEach(function(day){
+      rh+='<div style="display:flex;align-items:center;gap:8px;margin:15px 4px 8px;"><span style="font-size:13px;font-weight:800;color:'+C.green+';">'+esc(day.range)+'</span><div style="flex:1;height:1px;background:'+C.line+';"></div></div>';
+      day.shifts.forEach(function(sh){rh+=guardRow(sh);});
+    });
+    return rh;
+  }
   var showBox=!state.guard.loaded||state.showGuardPaste;
   if(showBox)return guardPaste_();
   var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:'+C.greenSoft+';border:1px solid '+C.green+';border-radius:12px;padding:11px 14px;margin-bottom:6px;"><div style="display:flex;align-items:center;gap:8px;color:'+C.greenDeep+';font-weight:700;font-size:13.5px;">'+icon("check",16,C.green)+' 本週站哨 · '+guardCount()+' 班</div><button class="btn" data-action="grepaste" style="border:none;background:transparent;color:'+C.green+';font-weight:700;font-size:13px;text-decoration:underline;">重新貼上</button></div>';
