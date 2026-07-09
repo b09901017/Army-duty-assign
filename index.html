@@ -129,7 +129,7 @@ var state={
   dayView:{mode:"A",date:""},
   absence:(saved&&saved.absence)?saved.absence:{},
   absForm:{reason:"補休",start:"",len:1,range:""},
-  tomb:(saved&&saved.tomb)||{},tombIds:(saved&&saved.tombIds)||{},wipe:(saved&&saved.wipe)||0,
+  tomb:(saved&&saved.tomb)||{},tombIds:(saved&&saved.tombIds)||{},wipe:(saved&&saved.wipe)||0,stateTs:(saved&&saved.stateTs)||0,
   evtForm:{id:null,md:"",label:"",range:"",group:"公差",people:[],keepAll:false},
   boards:(saved&&saved.boards)?saved.boards:{},
   activeDate:(saved&&saved.activeDate)?saved.activeDate:"",
@@ -139,11 +139,11 @@ var state={
 (function(){var d=state.activeDate,b=d&&state.boards[d];if(b&&b.duties){state.gongban={raw:b.raw,meta:b.meta,loaded:true};state.duties=b.duties;if(b.schedule&&b.schedule.items)state.schedule=b.schedule;}else{state.activeDate="";}})();
 var pasteText="",importText="",restoreText="",syncInput="";
 function saveBoard(){if(!state.activeDate||!state.gongban.loaded)return;var prev=state.boards[state.activeDate];state.boards[state.activeDate]={raw:state.gongban.raw||"",meta:state.gongban.meta,duties:state.duties,schedule:state.schedule,committed:(prev&&prev.committed)||false,wd:(prev&&prev.wd)||"",imported:!!(prev&&prev.imported),ts:Date.now()};}
-function loadBoard(date){saveBoard();var b=state.boards[date];if(!b)return false;state.gongban={raw:b.raw||"",meta:b.meta||[],loaded:true};state.duties=b.duties;state.schedule=(b.schedule&&b.schedule.items)?b.schedule:{raw:"",items:[],title:"",loaded:false,date:""};state.activeDate=date;return true;}
+function loadBoard(date){saveBoard();var b=state.boards[date];if(!b)return false;state.gongban={raw:b.raw||"",meta:b.meta||[],loaded:true};state.duties=b.duties;state.schedule=(b.schedule&&b.schedule.items)?b.schedule:{raw:"",items:[],title:"",loaded:false,date:""};state.activeDate=date;syncAvail();return true;}
 function boardDates(){return Object.keys(state.boards).sort(function(a,b){return dnum(a)-dnum(b);});}
-function persistLocal(){try{saveBoard();localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,schedule:state.schedule,plans:state.plans,absence:state.absence,boards:state.boards,activeDate:state.activeDate,tomb:state.tomb,tombIds:state.tombIds,wipe:state.wipe}));}catch(e){}}
-function persist(){persistLocal();pushSync();}
-var SYNC_KEY="duty-sync-url",pushT=null,lastPushAt=0,pollTimer=null,pulledOk=false,pendingPush=false;
+function persistLocal(){try{saveBoard();localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,schedule:state.schedule,plans:state.plans,absence:state.absence,boards:state.boards,activeDate:state.activeDate,tomb:state.tomb,tombIds:state.tombIds,wipe:state.wipe,stateTs:state.stateTs}));}catch(e){}}
+function persist(){state.stateTs=Date.now();dirty=true;persistLocal();pushSync();}
+var SYNC_KEY="duty-sync-url",pushT=null,lastPushAt=0,pollTimer=null,pulledOk=false,pendingPush=false,dirty=false;
 function slimBoards(){
   var out={};
   for(var d in state.boards){var b=state.boards[d];if(!b)continue;
@@ -153,7 +153,7 @@ function slimBoards(){
   }
   return out;
 }
-function payload(){return JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,plans:state.plans,absence:state.absence,boards:slimBoards(),tomb:state.tomb,tombIds:state.tombIds,wipe:state.wipe});}
+function payload(){return JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,plans:state.plans,absence:state.absence,boards:slimBoards(),tomb:state.tomb,tombIds:state.tombIds,wipe:state.wipe,stateTs:state.stateTs});}
 /* ---------- 合併（逐日，不整塊覆蓋）----------
    規則：同一天取「後修改的」；刪除靠墓碑 tomb[日期]=時間；清空統計靠 wipe=時間。
    這樣某支裝置資料不全時，只會補上、不會把別人的歷史削掉。 */
@@ -214,7 +214,7 @@ function pushNow(){
   flash("上傳中…（"+n+" 天排班板）");
   lastPushAt=Date.now();
   fetch(state.syncUrl,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:body})
-    .then(function(){state.syncStatus="on";syncBadge();flash("已備份到雲端："+n+" 天排班板＋行程");})
+    .then(function(){dirty=false;state.syncStatus="on";syncBadge();flash("已備份到雲端："+n+" 天排班板＋行程");})
     .catch(function(){state.syncStatus="err";syncBadge();flash("上傳失敗，檢查網路後再試");});
 }
 function pushSync(){
@@ -225,7 +225,7 @@ function pushSync(){
   clearTimeout(pushT);
   pushT=setTimeout(function(){
     lastPushAt=Date.now();
-    fetch(state.syncUrl,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:payload()}).then(function(){state.syncStatus="on";syncBadge();}).catch(function(){state.syncStatus="err";syncBadge();});
+    fetch(state.syncUrl,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:payload()}).then(function(){dirty=false;state.syncStatus="on";syncBadge();}).catch(function(){state.syncStatus="err";syncBadge();});
   },400);
 }
 function applyRemote(o){
@@ -235,13 +235,22 @@ function applyRemote(o){
   var sig=function(b,l,p,t,w){return JSON.stringify({names:o.names||state.names,l:l,p:p,t:t,w:w,b:b,mq:state.mealQueue,g:state.guard,gt:state.guardTally,ab:state.absence});};
   var cur=JSON.stringify({names:state.names,l:state.log,p:state.plans,t:state.tomb,w:state.wipe,b:slimBoards(),mq:state.mealQueue,g:state.guard,gt:state.guardTally,ab:state.absence});
   state.names=o.names;
-  if(o.mealQueue&&o.mealQueue.length===8)state.mealQueue=o.mealQueue;
-  if(o.guard)state.guard=o.guard;if(o.guardTally)state.guardTally=o.guardTally;if(o.absence)state.absence=o.absence;
+  // 排休／站哨／打飯順序這幾項是整份存的，沒有逐日時間戳。
+  // 只有在「雲端比較新」而且「本機沒有還沒上傳的修改」時才套用，否則會蓋掉你剛排好的東西。
+  var remoteNewer=(o.stateTs||0)>(state.stateTs||0);
+  if(remoteNewer&&!dirty){
+    if(o.mealQueue&&o.mealQueue.length===8)state.mealQueue=o.mealQueue;
+    if(o.guard)state.guard=o.guard;
+    if(o.guardTally)state.guardTally=o.guardTally;
+    if(o.absence)state.absence=o.absence;
+    state.stateTs=o.stateTs||state.stateTs;
+  }
   state.log=nl;state.plans=np;state.tomb=tomb;state.tombIds=tids;state.wipe=wipe;state.boards=nb;
   // 讓「編輯中的那天」跟著合併結果走，否則等一下 saveBoard() 會用舊資料蓋回去
   var ad=state.activeDate,b=ad&&state.boards[ad];
   if(b){state.gongban={raw:b.raw||"",meta:b.meta||[],loaded:true};state.duties=b.duties;if(b.schedule&&b.schedule.items.length)state.schedule=b.schedule;}
   else if(ad){state.activeDate="";state.gongban={raw:"",meta:[],loaded:false};state.duties=[];}
+  syncAvail();   // 排休是資料，出勤是派生值 → 拉到新資料後要重算，否則看起來像沒存到
   var now=JSON.stringify({names:state.names,l:state.log,p:state.plans,t:state.tomb,w:state.wipe,b:slimBoards(),mq:state.mealQueue,g:state.guard,gt:state.guardTally,ab:state.absence});
   if(now===cur)return false;
   persistLocal();return true;
@@ -1287,7 +1296,7 @@ function handle(a,el){
   else if(a==="gt-clear-ask"){state.confirmGuardClear=true;render();}
   else if(a==="gt-clear-cancel"){state.confirmGuardClear=false;render();}
   else if(a==="gt-clear-go"){guardTallyClear();}
-  else if(a==="parse"){var txt=(pasteText||"").trim();if(!txt){flash("先把公版貼進來");return;}var r=parseGongban(pasteText);if(!r.duties.length)flash("沒找到含261或打飯的勤務，確認格式");var pd=extractDate(pasteText)||todayLabel();var pwm=pasteText.match(/[（(]([一二三四五六日])[)）]/);state.gongban={raw:pasteText,meta:r.meta,loaded:true};state.duties=r.duties;state.activeDate=pd;state.boardMode="edit";state.boardOpen=true;autoTagTimes();var bd0=state.boards[pd]||{};bd0.wd=pwm?pwm[1]:(bd0.wd||"");state.boards[pd]=bd0;state.showPaste=false;state.showPreview=false;persist();render();}
+  else if(a==="parse"){var txt=(pasteText||"").trim();if(!txt){flash("先把公版貼進來");return;}var r=parseGongban(pasteText);if(!r.duties.length)flash("沒找到含261或打飯的勤務，確認格式");var pd=extractDate(pasteText)||todayLabel();var pwm=pasteText.match(/[（(]([一二三四五六日])[)）]/);state.gongban={raw:pasteText,meta:r.meta,loaded:true};state.duties=r.duties;state.activeDate=pd;state.boardMode="edit";state.boardOpen=true;autoTagTimes();var bd0=state.boards[pd]||{};bd0.wd=pwm?pwm[1]:(bd0.wd||"");state.boards[pd]=bd0;state.showPaste=false;state.showPreview=false;syncAvail();persist();render();}
   else if(a==="repaste"){state.showPaste=true;pasteText=state.gongban.raw;focusEl="paste";render();}
   else if(a==="board-load"){if(loadBoard(el.getAttribute("data-d"))){state.boardMode="view";state.boardOpen=true;state.showPaste=false;}render();}
   else if(a==="board-close"){state.boardOpen=false;state.showPaste=false;render();}
@@ -1381,6 +1390,7 @@ function fixMealTimes(){
   if(changed)persistLocal();   // 只修本機，不主動上傳（避免使用者什麼都沒做就推雲端）
   return changed;
 }
+syncAvail();   // 開 App 先依照排休紀錄還原「今日出勤」
 render();
 if(state.syncUrl){state.syncStatus="sync";pullSync();startPoll();}
 fixMealTimes()&&render();
