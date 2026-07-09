@@ -129,6 +129,7 @@ var state={
   dayView:{mode:"A",date:""},
   absence:(saved&&saved.absence)?saved.absence:{},
   absForm:{reason:"補休",start:"",len:1,range:""},
+  tomb:(saved&&saved.tomb)||{},tombIds:(saved&&saved.tombIds)||{},wipe:(saved&&saved.wipe)||0,
   evtForm:{id:null,md:"",label:"",range:"",group:"公差",people:[],keepAll:false},
   boards:(saved&&saved.boards)?saved.boards:{},
   activeDate:(saved&&saved.activeDate)?saved.activeDate:"",
@@ -137,37 +138,77 @@ var state={
 };
 (function(){var d=state.activeDate,b=d&&state.boards[d];if(b&&b.duties){state.gongban={raw:b.raw,meta:b.meta,loaded:true};state.duties=b.duties;if(b.schedule&&b.schedule.items)state.schedule=b.schedule;}else{state.activeDate="";}})();
 var pasteText="",importText="",restoreText="",syncInput="";
-function saveBoard(){if(!state.activeDate||!state.gongban.loaded)return;var prev=state.boards[state.activeDate];state.boards[state.activeDate]={raw:state.gongban.raw||"",meta:state.gongban.meta,duties:state.duties,schedule:state.schedule,committed:(prev&&prev.committed)||false,wd:(prev&&prev.wd)||"",imported:!!(prev&&prev.imported)};}
+function saveBoard(){if(!state.activeDate||!state.gongban.loaded)return;var prev=state.boards[state.activeDate];state.boards[state.activeDate]={raw:state.gongban.raw||"",meta:state.gongban.meta,duties:state.duties,schedule:state.schedule,committed:(prev&&prev.committed)||false,wd:(prev&&prev.wd)||"",imported:!!(prev&&prev.imported),ts:Date.now()};}
 function loadBoard(date){saveBoard();var b=state.boards[date];if(!b)return false;state.gongban={raw:b.raw||"",meta:b.meta||[],loaded:true};state.duties=b.duties;state.schedule=(b.schedule&&b.schedule.items)?b.schedule:{raw:"",items:[],title:"",loaded:false,date:""};state.activeDate=date;return true;}
 function boardDates(){return Object.keys(state.boards).sort(function(a,b){return dnum(a)-dnum(b);});}
-function persistLocal(){try{saveBoard();localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,schedule:state.schedule,plans:state.plans,absence:state.absence,boards:state.boards,activeDate:state.activeDate}));}catch(e){}}
+function persistLocal(){try{saveBoard();localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,schedule:state.schedule,plans:state.plans,absence:state.absence,boards:state.boards,activeDate:state.activeDate,tomb:state.tomb,tombIds:state.tombIds,wipe:state.wipe}));}catch(e){}}
 function persist(){persistLocal();pushSync();}
-var SYNC_KEY="duty-sync-url",pushT=null,lastPushAt=0,pollTimer=null;
+var SYNC_KEY="duty-sync-url",pushT=null,lastPushAt=0,pollTimer=null,pulledOk=false,pendingPush=false;
 function slimBoards(){
   var out={};
   for(var d in state.boards){var b=state.boards[d];if(!b)continue;
     var sc=b.schedule||{};
-    out[d]={meta:b.meta||[],duties:b.duties||[],wd:b.wd||"",committed:!!b.committed,imported:!!b.imported,
+    out[d]={meta:b.meta||[],duties:b.duties||[],wd:b.wd||"",committed:!!b.committed,imported:!!b.imported,ts:b.ts||0,
       schedule:{items:(sc.items||[]),title:sc.title||"",date:sc.date||"",loaded:!!(sc.items&&sc.items.length)}};
   }
   return out;
 }
-function mergeBoards(rem){
-  // 以雲端為準；本機若有同一天的原文（raw），保留下來供編輯者預覽／重新貼上
-  var out={};
-  for(var d in rem){var r=rem[d];if(!r)continue;
-    var loc=state.boards[d],sc=r.schedule||{};
-    out[d]={meta:r.meta||[],duties:r.duties||[],wd:r.wd||"",committed:!!r.committed,imported:!!r.imported,
-      raw:(loc&&loc.raw)||"",
+function payload(){return JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,plans:state.plans,absence:state.absence,boards:slimBoards(),tomb:state.tomb,tombIds:state.tombIds,wipe:state.wipe});}
+/* ---------- 合併（逐日，不整塊覆蓋）----------
+   規則：同一天取「後修改的」；刪除靠墓碑 tomb[日期]=時間；清空統計靠 wipe=時間。
+   這樣某支裝置資料不全時，只會補上、不會把別人的歷史削掉。 */
+function mdOf(x){return String(x).replace(/[（(].*$/,"");}
+function mergeTomb(rt){var out={};for(var k in state.tomb)out[k]=state.tomb[k];for(var k2 in (rt||{}))if(!out[k2]||rt[k2]>out[k2])out[k2]=rt[k2];return out;}
+function killed(md,ts,tomb,wipe){ts=ts||0;if(wipe&&ts<=wipe)return true;if(tomb[md]&&ts<=tomb[md])return true;return false;}
+function mergeBoards(rem,tomb,wipe){
+  var out={},keys={},d;
+  for(d in state.boards)keys[d]=1;
+  for(d in (rem||{}))keys[d]=1;
+  for(d in keys){
+    var loc=state.boards[d],r=(rem||{})[d];
+    var lts=(loc&&loc.ts)||0,rts=(r&&r.ts)||0;
+    var win=(!loc)?r:(!r)?loc:(rts>lts?r:loc);
+    if(!win)continue;
+    if(killed(d,Math.max(lts,rts),tomb,0))continue;   // 被刪掉的那天不要復活（wipe 只清統計，不清排班板）
+    var sc=win.schedule||{};
+    out[d]={meta:win.meta||[],duties:win.duties||[],wd:win.wd||"",committed:!!win.committed,imported:!!win.imported,ts:Math.max(lts,rts),
+      raw:(loc&&loc.raw)||"",  // 原文只存本機，雲端不傳，合併時保留
       schedule:{items:sc.items||[],title:sc.title||"",date:sc.date||"",loaded:!!(sc.items&&sc.items.length),raw:(loc&&loc.schedule&&loc.schedule.raw)||""}};
   }
   return out;
 }
-function payload(){return JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,plans:state.plans,absence:state.absence,boards:slimBoards()});}
+function mergeIds(ri){var out={};for(var k in state.tombIds)out[k]=state.tombIds[k];for(var k2 in (ri||{}))if(!out[k2]||ri[k2]>out[k2])out[k2]=ri[k2];return out;}
+function mergeLog(rem,tomb,wipe,tids){
+  var by={},i,e;
+  function add(list){for(i=0;i<(list||[]).length;i++){e=list[i];var id=String(e.id),old=by[id];if(!old||(e.ts||0)>=(old.ts||0))by[id]=e;}}
+  add(state.log);add(rem||[]);
+  var out=[];
+  for(var id in by){e=by[id];
+    if(tids[id]&&(e.ts||0)<=tids[id])continue;         // 這筆被刪過
+    if(killed(mdOf(e.date),e.ts,tomb,wipe))continue;   // 這天被刪過／統計被清空
+    out.push(e);}
+  out.sort(function(a,b){return dnum(a.date)-dnum(b.date);});
+  return out;
+}
+function mergePlans(rem,tomb,wipe){
+  var out={},keys={},d;
+  for(d in state.plans)keys[d]=1;
+  for(d in (rem||{}))keys[d]=1;
+  for(d in keys){
+    var loc=state.plans[d],r=(rem||{})[d];
+    var lts=(loc&&loc.ts)||0,rts=(r&&r.ts)||0;
+    var win=(!loc)?r:(!r)?loc:(rts>lts?r:loc);
+    if(!win)continue;
+    if(killed(d,Math.max(lts,rts),tomb,0))continue;
+    out[d]=win;
+  }
+  return out;
+}
 function syncBadge(){var el=document.getElementById("syncdot");if(el)el.style.background=state.syncStatus==="on"?C.green:state.syncStatus==="err"?C.red:C.line;}
 function pushNow(){
   if(state.readOnly){flash("唯讀模式無法上傳");return;}
   if(!state.syncUrl){flash("尚未連線雲端");return;}
+  if(!pulledOk){flash("還沒讀到雲端資料，先同步一次再上傳");pendingPush=true;pullSync();return;}
   saveBoard();
   var body=payload(),n=Object.keys(state.boards).length;
   flash("上傳中…（"+n+" 天排班板）");
@@ -179,6 +220,8 @@ function pushNow(){
 function pushSync(){
   if(state.readOnly)return;
   if(!state.syncUrl)return;
+  // 保險：沒成功讀過雲端就不准上傳，否則會用本機的空資料覆蓋掉別人的歷史
+  if(!pulledOk){pendingPush=true;pullSync();return;}
   clearTimeout(pushT);
   pushT=setTimeout(function(){
     lastPushAt=Date.now();
@@ -187,17 +230,20 @@ function pushSync(){
 }
 function applyRemote(o){
   if(!o||!o.names)return false;
-  var rem=JSON.stringify({names:o.names,log:o.log||[],mealQueue:(o.mealQueue&&o.mealQueue.length===8)?o.mealQueue:state.mealQueue,guard:o.guard||state.guard,guardTally:o.guardTally||state.guardTally,plans:o.plans||state.plans,absence:o.absence||state.absence,boards:o.boards||slimBoards()});
-  var cur=JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardTally:state.guardTally,plans:state.plans,absence:state.absence,boards:slimBoards()});
-  if(rem===cur)return false;
-  state.names=o.names;if(o.log)state.log=o.log;if(o.mealQueue&&o.mealQueue.length===8)state.mealQueue=o.mealQueue;if(o.guard)state.guard=o.guard;if(o.guardTally)state.guardTally=o.guardTally;if(o.plans)state.plans=o.plans;if(o.absence)state.absence=o.absence;
-  if(o.boards){
-    state.boards=mergeBoards(o.boards);
-    // 讓「編輯中的那天」跟著雲端走，否則等一下 saveBoard() 會用舊資料蓋回去
-    var ad=state.activeDate,b=ad&&state.boards[ad];
-    if(b){state.gongban={raw:b.raw||"",meta:b.meta||[],loaded:true};state.duties=b.duties;if(b.schedule&&b.schedule.items.length)state.schedule=b.schedule;}
-    else if(ad){state.activeDate="";state.gongban={raw:"",meta:[],loaded:false};state.duties=[];}
-  }
+  var tomb=mergeTomb(o.tomb),tids=mergeIds(o.tombIds),wipe=Math.max(state.wipe||0,o.wipe||0);
+  var nb=mergeBoards(o.boards,tomb,wipe),nl=mergeLog(o.log,tomb,wipe,tids),np=mergePlans(o.plans,tomb,wipe);
+  var sig=function(b,l,p,t,w){return JSON.stringify({names:o.names||state.names,l:l,p:p,t:t,w:w,b:b,mq:state.mealQueue,g:state.guard,gt:state.guardTally,ab:state.absence});};
+  var cur=JSON.stringify({names:state.names,l:state.log,p:state.plans,t:state.tomb,w:state.wipe,b:slimBoards(),mq:state.mealQueue,g:state.guard,gt:state.guardTally,ab:state.absence});
+  state.names=o.names;
+  if(o.mealQueue&&o.mealQueue.length===8)state.mealQueue=o.mealQueue;
+  if(o.guard)state.guard=o.guard;if(o.guardTally)state.guardTally=o.guardTally;if(o.absence)state.absence=o.absence;
+  state.log=nl;state.plans=np;state.tomb=tomb;state.tombIds=tids;state.wipe=wipe;state.boards=nb;
+  // 讓「編輯中的那天」跟著合併結果走，否則等一下 saveBoard() 會用舊資料蓋回去
+  var ad=state.activeDate,b=ad&&state.boards[ad];
+  if(b){state.gongban={raw:b.raw||"",meta:b.meta||[],loaded:true};state.duties=b.duties;if(b.schedule&&b.schedule.items.length)state.schedule=b.schedule;}
+  else if(ad){state.activeDate="";state.gongban={raw:"",meta:[],loaded:false};state.duties=[];}
+  var now=JSON.stringify({names:state.names,l:state.log,p:state.plans,t:state.tomb,w:state.wipe,b:slimBoards(),mq:state.mealQueue,g:state.guard,gt:state.guardTally,ab:state.absence});
+  if(now===cur)return false;
   persistLocal();return true;
 }
 function pullSync(){
@@ -205,8 +251,9 @@ function pullSync(){
   if(Date.now()-lastPushAt<3000)return;
   fetch(state.syncUrl).then(function(r){return r.text();}).then(function(txt){
     var o={};try{o=JSON.parse(txt);}catch(e){return;}
-    state.syncStatus="on";
-    if(applyRemote(o))render();else syncBadge();
+    state.syncStatus="on";pulledOk=true;
+    if(applyRemote(o)){fixMealTimes();render();}else syncBadge();
+    if(pendingPush){pendingPush=false;pushSync();}
   }).catch(function(){state.syncStatus="err";syncBadge();});
 }
 function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(pullSync,20000);}
@@ -497,7 +544,7 @@ function commit(){
   savePlan(date);
   var lid="b_"+date;
   state.log=state.log.filter(function(e){return String(e.id)!==lid;});
-  state.log.push({id:lid,date:date,entries:entries});
+  state.log.push({id:lid,date:date,entries:entries,ts:Date.now()});
   var bd=state.boards[date];
   if(!(bd&&bd.committed)){
     var mealPpl=[];state.duties.filter(function(d){return d.kind==="meal"&&!d.removed;}).sort(function(a,b){return pord(a.period)-pord(b.period);}).forEach(function(d){d.assigned.forEach(function(pid){mealPpl.push(pid);});});
@@ -533,6 +580,7 @@ function removeOne(pid,cat){for(var i=state.log.length-1;i>=0;i--){var e=state.l
 function clearPerson(pid){for(var i=state.log.length-1;i>=0;i--){var e=state.log[i];e.entries=e.entries.filter(function(x){return x.p!==pid;});if(!e.entries.length)state.log.splice(i,1);}}
 function delDayAll(date){
   var md=String(date).replace(/[（(].*$/,"");var lid="b_"+md;
+  state.tomb[md]=Date.now();   // 墓碑：讓其他裝置也刪掉，不會被合併復活
   state.log=state.log.filter(function(e){return String(e.id)!==lid&&!(isExtra(e)&&String(e.date).replace(/[（(].*$/,"")===md);});
   if(state.plans[md])delete state.plans[md];
   if(state.boards[md])delete state.boards[md];
@@ -689,6 +737,38 @@ function syncBlock(){
   }
   var left=state.syncUrl?'<button class="btn" data-action="disconnect-sync" style="flex:1;padding:11px;border-radius:10px;border:1px solid '+C.redSoft+';background:'+C.redSoft+';color:'+C.red+';font-weight:700;font-size:13px;">中斷</button>':'<button class="btn" data-action="close-sync" style="flex:1;padding:11px;border-radius:10px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:13px;">取消</button>';
   return card(label("雲端同步網址（Apps Script 的 /exec）")+'<div style="font-size:11.5px;color:'+C.sub+';margin-top:6px;">先在 Google 試算表建立 Apps Script 並部署成「任何人」，把 /exec 網址貼進來。全隊貼同一個網址＝共用同一份。</div><input data-input="syncurl" value="'+esc(syncInput||state.syncUrl)+'" placeholder="https://script.google.com/macros/s/.../exec" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:12px;outline:none;font-family:ui-monospace,Menlo,monospace;" /><div style="display:flex;gap:8px;margin-top:10px;">'+left+'<button class="btn" data-action="connect-sync" style="flex:2;padding:11px;border-radius:10px;border:none;background:'+C.green+';color:#fff;font-weight:700;font-size:13px;">連線並同步</button></div>',"margin-top:10px;");
+}
+function missingBoardDays(){
+  var miss={};
+  state.log.forEach(function(e){if(isExtra(e))return;var md=mdOf(e.date);
+    if(!/\d{1,2}\/\d{1,2}/.test(md))return;
+    if(state.boards[md]||state.tomb[md])return;
+    if(!e.entries||!e.entries.length)return;
+    miss[md]=1;});
+  return Object.keys(miss);
+}
+function rescueBar(){
+  if(state.readOnly)return "";
+  var miss=missingBoardDays();
+  if(!miss.length)return "";
+  return '<div style="margin-top:12px;">'+card('<div style="font-size:13px;font-weight:800;color:'+C.amber+';">偵測到 '+miss.length+' 天有紀錄但沒有排班板</div><div style="font-size:11.5px;color:'+C.sub+';margin-top:5px;line-height:1.6;">'+esc(miss.slice(0,10).join("、"))+(miss.length>10?" …":"")+'</div><button class="btn" data-action="rebuild-boards" style="width:100%;margin-top:10px;padding:11px;border-radius:11px;border:none;background:'+C.brass+';color:#fff;font-weight:800;font-size:13.5px;">從紀錄重建這些排班板</button>',"border-color:"+C.brass+";")+'</div>';
+}
+function rebuildBoards(){
+  // 救援：排班板不見時，用還在的統計紀錄（log）＋行程（plans）把每天重建回來
+  var made=0,skip=0;
+  state.log.slice().forEach(function(e){
+    if(isExtra(e))return;                      // 臨時行程不是排班板
+    var md=mdOf(e.date);
+    if(!/\d{1,2}\/\d{1,2}/.test(md))return;
+    if(state.boards[md]){skip++;return;}       // 已存在的不動
+    if(state.tomb[md])return;                  // 曾刻意刪掉的不要救回來
+    if(!e.entries||!e.entries.length)return;
+    boardFromImport(md,e.entries,(state.plans[md]&&state.plans[md].weekday)||"");
+    made++;
+  });
+  if(made){persistLocal();pushSync();}
+  flash(made?("已重建 "+made+" 天排班板"+(skip?"（"+skip+" 天原本就在）":"")):"沒有可重建的日子（排班板都在）");
+  render();
 }
 function statsPage(){
   var grand=0;PEOPLE.forEach(function(p){grand+=total(p.id);});
@@ -918,9 +998,15 @@ function defaultTimeFor(d){
   if(d.period==="AM"&&/(\u8d70\u5eca|\u99ac\u8def|\u6d74\u5ec1|\u51b0\u6876|\u6c34\u6876|\u5783\u573e|\u6383)/.test(d.label))return "0630-0740";
   return "";
 }
+function mealWindow(period){return period==="AM"?[0,600]:period==="NOON"?[600,900]:[900,1440];}
 function schedMatch(d,items){
   if(!items.length)return "";
-  if(d.kind==="meal"){var mi=items.filter(function(it){return /\u6253\u98ef|\u6253\u65e9\u98ef/.test(it.text);}).sort(function(a,b){return (a.min||0)-(b.min||0);});var p=d.period==="AM"?mi[0]:d.period==="NOON"?mi[1]:mi[2];return p?p.range:"";}
+  if(d.kind==="meal"){
+    // 用「時間落在哪個區間」判斷早/午/晚，不能靠第幾筆：準則若少寫一行會整個錯位
+    var w=mealWindow(d.period);
+    var hit=items.filter(function(it){return /\u6253\u98ef|\u6253\u65e9\u98ef/.test(it.text)&&it.min!=null&&it.min>=w[0]&&it.min<w[1];}).sort(function(a,b){return a.min-b.min;});
+    return hit.length?hit[0].range:"";
+  }
   if(d.period==="AM"&&/(\u8d70\u5eca|\u99ac\u8def|\u6d74\u5ec1|\u51b0\u6876|\u6c34\u6876|\u5783\u573e|\u6383)/.test(d.label)){var sw=items.filter(function(it){return /(\u5916\u6383|\u74b0\u5883\u6574\u7406|\u843d\u8449|\u6c34\u6e9d|\u6253\u6383)/.test(it.text);}).sort(function(a,b){return (a.min||0)-(b.min||0);});if(sw.length)return sw[0].range;}
   var lbl=d.label.replace(/\s+/g,"");
   var kwList=["\u92c1\u5e8a","\u69cd\u7bb1","\u5167\u52d9","\u5167\u7269","\u8cc7\u6536","\u8cc7\u6e90\u56de\u6536","\u7d93\u7406","\u8eca\u5834","\u5206\u83dc","\u4f19\u623f","\u4fdd\u69cd","\u5c04\u64ca","\u6253\u9776","\u53f8\u4ee4\u90e8","\u6559\u53ec","\u88dc\u5eab","\u756b\u5716","\u5674","\u642c","\u5347\u65d7","\u9ede\u540d","\u958b\u5eab","\u9001\u88dd","\u53d6\u88dd"];
@@ -978,7 +1064,8 @@ function boardFromImport(date,entries,wd){
     if(fen)d.fenca=fen;
     return d;
   });
-  state.boards[mdOnly]={raw:"（由統計匯入）",meta:[],duties:duties,schedule:{raw:"",items:[],title:"",loaded:false,date:""},wd:wd||"",committed:true,imported:true};
+  var sp=state.plans[mdOnly],sit=(sp&&sp.schedule&&sp.schedule.length)?sp.schedule:[];
+  state.boards[mdOnly]={raw:"（由統計匯入）",meta:[],duties:duties,schedule:{raw:"",items:sit,title:"",loaded:!!sit.length,date:""},wd:wd||(sp&&sp.weekday)||"",committed:true,imported:true,ts:Date.now()};
 }
 function planFromImport(date,entries,weekday){
   var mdOnly=date.replace(/[\uff08(].*$/,""),byCat={};
@@ -1007,10 +1094,10 @@ function saveExtraEvent(f){
   var entries=note?[]:ppl.map(function(p){return {p:p,c:label,g:f.group,t:t};});
   var id=f.id||("x_"+md+"_"+Date.now());
   state.log=state.log.filter(function(e){return String(e.id)!==String(id);});
-  state.log.push({id:id,date:md,x:1,label:label,group:f.group,range:rng,keepAll:!!f.keepAll,entries:entries});
+  state.log.push({id:id,date:md,x:1,label:label,group:f.group,range:rng,keepAll:!!f.keepAll,entries:entries,ts:Date.now()});
   persist();return "";
 }
-function delExtraEvent(id){state.log=state.log.filter(function(e){return String(e.id)!==String(id);});persist();}
+function delExtraEvent(id){state.tombIds[String(id)]=Date.now();state.log=state.log.filter(function(e){return String(e.id)!==String(id);});persist();}
 function restsOutsFor(mdOnly){var rests=[],outs=[];PEOPLE.forEach(function(p){var rec=absenceRec(p.id,mdOnly);if(!rec)return;if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});return {rests:rests,outs:outs};}
 function planForBoard(date){
   var mdOnly=(date||"").replace(/[（(].*$/,""),duties,schedule,wd,plan=null;
@@ -1162,7 +1249,7 @@ var root=document.getElementById("root"),navEl=document.getElementById("nav"),fo
 function render(){
   refreshHist();
   var h=header();
-  if(state.page==="board"){h+=pasteCard()+boardTabs();if(state.gongban.loaded&&state.boardOpen){var ro=(state.boardMode==="view");if(ro)h+='<div style="margin-top:12px;display:flex;align-items:center;gap:7px;background:'+C.brassSoft+';border:1px solid '+C.brass+';border-radius:11px;padding:9px 13px;color:'+C.amber+';font-weight:700;font-size:12.5px;">'+icon("eye",15,C.brass)+' 閱讀模式：可看不可改，點上面鉛筆切換編輯</div>';syncAvail();h+=schedCard()+availCard()+mealsRow()+fencaRow()+dutyList();if(!state.readOnly){h+=boardActions();if(state.showPreview)h+=previewCard();h+=commitBtn();}}}
+  if(state.page==="board"){h+=pasteCard()+boardTabs()+rescueBar();if(state.gongban.loaded&&state.boardOpen){var ro=(state.boardMode==="view");if(ro)h+='<div style="margin-top:12px;display:flex;align-items:center;gap:7px;background:'+C.brassSoft+';border:1px solid '+C.brass+';border-radius:11px;padding:9px 13px;color:'+C.amber+';font-weight:700;font-size:12.5px;">'+icon("eye",15,C.brass)+' 閱讀模式：可看不可改，點上面鉛筆切換編輯</div>';syncAvail();h+=schedCard()+availCard()+mealsRow()+fencaRow()+dutyList();if(!state.readOnly){h+=boardActions();if(state.showPreview)h+=previewCard();h+=commitBtn();}}}
   else if(state.page==="guard"){h+=guardPage();}
   else if(state.page==="day"){h+=dayPage();}
   else{h+=statsPage();}
@@ -1176,7 +1263,7 @@ root.addEventListener("input",onInput);overlay.addEventListener("input",onInput)
 function handle(a,el){
   var duty=el.getAttribute("data-duty"),pid=el.getAttribute("data-pid"),id=el.getAttribute("data-id"),day=el.getAttribute("data-day"),cat=el.getAttribute("data-cat"),shift=el.getAttribute("data-shift");
   if(a==="noop")return;
-  if(a==="unlock"){var code=null;try{code=window.prompt("輸入編輯密碼解鎖");}catch(e){}if(code===null)return;if(code===EDIT_CODE){try{localStorage.setItem("duty-edit-ok","1");}catch(e){}state.readOnly=false;flash("已解鎖，可以編輯了");render();}else{flash("密碼不對");}return;}
+  if(a==="unlock"){var code=null;try{code=window.prompt("輸入編輯密碼解鎖");}catch(e){}if(code===null)return;if(code===EDIT_CODE){try{localStorage.setItem("duty-edit-ok","1");}catch(e){}state.readOnly=false;pulledOk=false;pendingPush=false;flash("已解鎖，正在讀取雲端資料…");if(state.syncUrl)pullSync();render();}else{flash("密碼不對");}return;}
   if(state.readOnly){var VIEW_OK={"go-board":1,"go-guard":1,"go-day":1,"go-stats":1,"day-mode":1,"day-date":1,"board-load":1,"board-close":1,"open-person":1,"ps-toggle":1,"close-sheet":1,"toggle-preview":1,"copy-filled":1,"copy-persons":1,"gcopy":1,"copy-backup":1,"pull-now":1};if(!VIEW_OK[a]){flash("唯讀模式：只能看，無法修改");return;}}
   if(state.page==="board"&&state.boardMode==="view"&&{"avail":1,"pick-toggle":1,"set-extra":1,"set-time":1,"toggle-adv":1,"count-dec":1,"count-inc":1,"toggle-keepall":1,"del-duty":1,"open-add":1,"af-period":1,"af-extra":1,"af-keepall":1,"af-dec":1,"af-inc":1,"af-add":1,"af-cancel":1,"auto":1,"commit":1,"open-absence":1}[a]){flash("閱讀模式：點上面鉛筆切換編輯");return;}
   if(a==="noop")return;
@@ -1265,17 +1352,38 @@ function handle(a,el){
   else if(a==="disconnect-sync"){disconnectSync();}
   else if(a==="pull-now"){flash("同步中…");pullSync();}
   else if(a==="push-now"){pushNow();}
+  else if(a==="rebuild-boards"){rebuildBoards();}
   else if(a==="close-backup"){state.backupOpen=false;restoreText="";render();}
   else if(a==="copy-backup"){copyText(JSON.stringify({v:3,names:state.names,log:state.log,mealQueue:state.mealQueue}));}
   else if(a==="do-restore"){var rt=(restoreText||"").trim();if(!rt){flash("先貼上備份碼");return;}try{var o=JSON.parse(rt);if(o.names)state.names=o.names;if(o.log)state.log=o.log;if(o.mealQueue&&o.mealQueue.length===8)state.mealQueue=o.mealQueue;persist();state.backupOpen=false;restoreText="";flash("已還原備份");render();}catch(err){flash("備份碼格式不對");}}
   else if(a==="cancel-reset"){state.confirmReset=false;render();}
-  else if(a==="do-reset"){state.log=[];state.confirmReset=false;persist();flash("統計已全部清空");render();}
+  else if(a==="do-reset"){state.log=[];state.wipe=Date.now();state.confirmReset=false;persist();flash("統計已全部清空");render();}
 }
 function onClick(e){var el=e.target.closest?e.target.closest("[data-action]"):null;if(el)handle(el.getAttribute("data-action"),el);}
 root.addEventListener("click",onClick);navEl.addEventListener("click",onClick);overlay.addEventListener("click",onClick);
 document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")pullSync();});
+function fixMealTimes(){
+  // 舊版把早/午/晚打對到準則的「第 1/2/3 筆打飯」，準則少一行就會錯位（例：午打被標成 1700）。
+  // 這裡把已存的排班板重算一次；使用者手動指定過的時間（timeSrc==="manual"）不動。
+  var changed=false;
+  function fixList(duties,items){
+    (duties||[]).forEach(function(d){
+      if(d.kind!=="meal"||d.timeSrc==="manual")return;
+      var t=schedMatch(d,items)||defaultTimeFor(d);
+      if(t&&d.schedTime!==t){d.schedTime=t;d.timeSrc="auto";changed=true;}
+    });
+  }
+  for(var dt in state.boards){var b=state.boards[dt];if(!b)continue;
+    var its=((b.schedule&&b.schedule.items)?b.schedule.items:[]).filter(function(it){return it.time;});
+    fixList(b.duties,its);
+  }
+  fixList(state.duties,schedTimed());
+  if(changed)persistLocal();   // 只修本機，不主動上傳（避免使用者什麼都沒做就推雲端）
+  return changed;
+}
 render();
 if(state.syncUrl){state.syncStatus="sync";pullSync();startPoll();}
+fixMealTimes()&&render();
 setInterval(function(){if(state.page==="day"&&!state.sheet&&!state.confirmDelDay){var cp=currentPlan();if(cp&&cp.plan&&cp.plan.date===todayLabel())render();}},60000);
 </script>
 </body>
