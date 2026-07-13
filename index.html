@@ -75,6 +75,7 @@ function personByCode(pid){for(var i=0;i<PEOPLE.length;i++)if(PEOPLE[i].id===pid
 function splitColon(line){var i=line.search(/[：:]/);if(i<0)return null;return {label:line.slice(0,i).trim(),colon:line[i],rhs:line.slice(i+1)};}
 var GCOLORS={"打飯":"#C08743","公差":"#5479A6","打掃":"#4F8A6A","大公差":"#9C4A6E","小公差":"#6B5B95","站哨":"#3E7B8C","分菜":"#B06A3C"};
 function deriveGroup(cat){if(cat==="大公差")return "大公差";if(cat==="小公差")return "小公差";if(/分菜/.test(cat))return "分菜";if(/(早打|午打|晚打)/.test(cat)||cat==="打飯")return "打飯";if(/公差|車場|鋁床|經理|保槍|安官|衛哨|哨/.test(cat))return "公差";return "打掃";}
+function dutyGroup(d){if(d.extra==="big")return "大公差";if(d.extra==="small")return "小公差";if(d.fenca&&d.fenca!=="head")return "分菜";if(d.kind==="meal")return "打飯";return d.period==="GC"?"公差":"打掃";}
 function catColor(cat){var g=(typeof HIST!=="undefined"&&HIST.cg&&HIST.cg[cat])||deriveGroup(cat);return GCOLORS[g]||"#888";}
 function sum(o){var s=0;for(var k in o)s+=o[k];return s;}
 function todayLabel(){var d=new Date();return (d.getMonth()+1)+"/"+d.getDate();}
@@ -382,7 +383,7 @@ function buildPersonList(){
       else if(d.period==="GC")gc.push((d.time?d.time+" ":"")+d.label+suf);
       else bp[d.period].push(d.label+suf);
     });
-    state.guard.days.forEach(function(day){if(day.date!==date.replace(/[（(].*$/,""))return;day.shifts.forEach(function(sh){if(sh.assigned.indexOf(p.id)>=0)guards.push(shiftHM(sh.code)+(sh.loc||""));});});
+    var _gd=date.replace(/[（(].*$/,"");state.guard.days.forEach(function(day){day.shifts.forEach(function(sh){if((sh.date||day.date)!==_gd)return;if(sh.assigned.indexOf(p.id)>=0)guards.push(shiftHM(sh.code)+(sh.loc||""));});});
     out.push("");out.push(p.id+"　"+nameOf(p.id));
     var any=false;
     if(meals.length){out.push("· 打飯："+meals.join("、"));any=true;}
@@ -396,14 +397,27 @@ function buildPersonList(){
 }
 function guardRange(code){return code.slice(0,2)+"00-"+code.slice(2,4)+"00";}
 function shiftHM(code){var a=code.slice(0,2),b=code.slice(2,4);return (a==="24"?"00":a)+":00–"+(b==="24"?"00":b)+":00";}
+function normMD(s){var m=String(s||"").match(/(\d{1,2})\s*\/\s*(\d{1,2})/);return m?(parseInt(m[1],10)+"/"+parseInt(m[2],10)):"";}
 function parseGuard(text){
   var lines=text.replace(/\r/g,"").split("\n"),days=[],meta=[],si=0;
+  var curDay=null,prevStart=-1,inD2=false;
   lines.forEach(function(raw){
     var t=raw.trim();
     var dm=t.match(/^(\d{1,2})\s*\/\s*(\d{1,2})/);
-    if(dm&&/[-−–—~]/.test(t)){days.push({date:parseInt(dm[1],10)+"/"+parseInt(dm[2],10),range:t,shifts:[]});meta.push({type:"day",dayIdx:days.length-1});return;}
+    if(dm&&/[-−–—~]/.test(t)){
+      var ds=t.match(/(\d{1,2})\s*\/\s*(\d{1,2})/g)||[];
+      var d1=normMD(ds[0]||""),d2=ds[1]?normMD(ds[1]):addDaysMD(d1,1);
+      curDay={date:d1,date2:d2,range:t,shifts:[]};days.push(curDay);prevStart=-1;inD2=false;
+      meta.push({type:"day",dayIdx:days.length-1});return;
+    }
     var sm=t.match(/^(\d{4})\s*([（(][^）)]*[）)])?/);
-    if(sm&&days.length){var sh={id:"g"+(si++),code:sm[1],loc:sm[2]||"",assigned:[]};days[days.length-1].shifts.push(sh);meta.push({type:"shift",shiftId:sh.id});return;}
+    if(sm&&curDay){
+      var code=sm[1],st=parseInt(code.slice(0,2),10);
+      if(prevStart>=0&&st<prevStart)inD2=true;   // 時間往回跳＝跨過午夜，改記到第二天
+      prevStart=st;
+      var sh={id:"g"+(si++),code:code,loc:sm[2]||"",assigned:[],date:(inD2?curDay.date2:curDay.date)};
+      curDay.shifts.push(sh);meta.push({type:"shift",shiftId:sh.id});return;
+    }
     meta.push({type:"static",text:raw});
   });
   return {days:days,meta:meta};
@@ -545,12 +559,7 @@ function commit(){
   var entries=[];
   state.duties.forEach(function(d){
     if(d.removed)return;
-    var g,cat;
-    if(d.extra==="big"){g="大公差";cat=d.label;}
-    else if(d.extra==="small"){g="小公差";cat=d.label;}
-    else if(d.fenca&&d.fenca!=="head"){g="分菜";cat=d.label;}
-    else if(d.kind==="meal"){g="打飯";cat=d.label;}
-    else{g=d.period==="GC"?"公差":"打掃";cat=d.label;}
+    var g=dutyGroup(d),cat=d.label;
     if(d.keepAll){PEOPLE.forEach(function(p){entries.push({p:p.id,c:cat,g:g});});}
     else{d.assigned.forEach(function(pid){entries.push({p:pid,c:cat,g:g});});}
   });
@@ -802,7 +811,8 @@ function guardPaste_(){return card(label("貼上本週衛哨公版")+'<textarea 
 function guardRow(sh){
   var ro=state.readOnly,filled=sh.assigned.length>0;
   var who=filled?sh.assigned.map(function(id){return '<span style="font-weight:700;color:'+C.greenDeep+';">'+esc(nameOf(id))+'</span>';}).join("、"):'<span style="color:'+C.sub+';font-size:12.5px;">'+(ro?"未排":"點我指派")+'</span>';
-  var inner='<span style="flex-shrink:0;font-variant-numeric:tabular-nums;font-weight:800;color:'+C.ink+';font-size:14px;">'+esc(sh.code)+'</span><span style="flex-shrink:0;font-size:11.5px;color:'+C.sub+';">'+shiftHM(sh.code)+esc(sh.loc||"")+'</span><span style="flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+who+'</span>';
+  var dtag=sh.date?'<span style="flex-shrink:0;font-size:10.5px;font-weight:800;color:'+(parseInt(sh.code.slice(0,2),10)<18?C.brass:C.sub)+';font-variant-numeric:tabular-nums;">'+esc(sh.date)+'</span>':"";
+  var inner='<span style="flex-shrink:0;font-variant-numeric:tabular-nums;font-weight:800;color:'+C.ink+';font-size:14px;">'+esc(sh.code)+'</span>'+dtag+'<span style="flex-shrink:0;font-size:11.5px;color:'+C.sub+';">'+shiftHM(sh.code)+esc(sh.loc||"")+'</span><span style="flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+who+'</span>';
   var st='width:100%;display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;border:1px solid '+(filled?C.green:C.line)+';background:'+(filled?C.greenSoft:C.surface)+';margin-bottom:7px;text-align:left;';
   if(ro)return '<div style="'+st+'">'+inner+'</div>';
   return '<button class="btn" data-action="gpick" data-shift="'+sh.id+'" style="'+st+'">'+inner+'</button>';
@@ -810,7 +820,7 @@ function guardRow(sh){
 function guardStats(){
   var ro=state.readOnly;
   var per={};PEOPLE.forEach(function(p){per[p.id]=[];});
-  state.guard.days.forEach(function(day){day.shifts.forEach(function(sh){sh.assigned.forEach(function(pid){if(per[pid])per[pid].push(day.date+" "+sh.code.slice(0,2)+"–"+sh.code.slice(2,4));});});});
+  state.guard.days.forEach(function(day){day.shifts.forEach(function(sh){sh.assigned.forEach(function(pid){if(per[pid])per[pid].push((sh.date||day.date)+" "+sh.code.slice(0,2)+"–"+sh.code.slice(2,4));});});});
   var stepBtn=function(act,pid,txt){return '<button class="btn tap" data-action="'+act+'" data-id="'+pid+'" style="width:26px;height:26px;border-radius:8px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+txt+'</button>';};
   var rows=PEOPLE.map(function(p){
     var list=per[p.id],wk=list.length,tally=state.guardTally[p.id]||0,col=tally?C.greenDeep:C.sub;
@@ -882,15 +892,16 @@ function pickerInner(d){
     var keep=d.kind==="meal"?"":'<button class="btn" data-action="toggle-keepall" style="display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:9px;border:1px solid '+(d.keepAll?C.green:C.line)+';background:'+(d.keepAll?C.greenSoft:C.surface)+';color:'+(d.keepAll?C.greenDeep:C.sub)+';font-size:12.5px;font-weight:600;"><span style="width:15px;height:15px;border-radius:5px;border:1.5px solid '+(d.keepAll?C.green:C.sub)+';background:'+(d.keepAll?C.green:"transparent")+';display:flex;align-items:center;justify-content:center;">'+(d.keepAll?icon("check",10,"#fff"):"")+'</span>八人一起</button>';
     ctrl='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">'+stepper+keep+'</div>';
   }
-  var cat=d.kind==="meal"?"打飯":d.label,isEx=(d.extra==="big"||d.extra==="small");
-  function pcnt(pid){return (HIST.h[pid]&&HIST.h[pid][cat])||0;}
+  var grp=dutyGroup(d),isEx=(d.extra==="big"||d.extra==="small");
+  function gcnt(pid){return groupTotal(pid,grp);}
+  function scnt(pid){return (HIST.h[pid]&&HIST.h[pid][d.label])||0;}
   function bigc(pid){return groupTotal(pid,"大公差");}
   function smac(pid){return groupTotal(pid,"小公差");}
   function exkey(pid){return d.extra==="big"?bigc(pid):smac(pid);}
-  var sorted=PEOPLE.slice().sort(function(a,b){return (isEx?(exkey(a.id)-exkey(b.id)):(pcnt(a.id)-pcnt(b.id)))||a.id-b.id;});
+  var sorted=PEOPLE.slice().sort(function(a,b){return (isEx?(exkey(a.id)-exkey(b.id)):((gcnt(a.id)-gcnt(b.id))||(scnt(a.id)-scnt(b.id))))||a.id-b.id;});
   var list=d.keepAll?'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:24px 0;">這項會保留成「261」，不用選人。</div>':sorted.map(function(p){
     var on=d.assigned.indexOf(p.id)>=0,off=(!on)&&!state.available[p.id],blocked=(!on)&&(occ[p.id]!==undefined),rb=(!on)&&restBlock(p.id,d),warn=off||blocked||!!rb;
-    var cntTxt=isEx?("大公差 ×"+bigc(p.id)+"・小公差 ×"+smac(p.id)):(cat+" "+pcnt(p.id)+" 次");
+    var cntTxt=isEx?("大公差 ×"+bigc(p.id)+"・小公差 ×"+smac(p.id)):(grp+"共 "+gcnt(p.id)+((d.label&&d.label!==grp)?("　"+d.label+" "+scnt(p.id)):""));
     var rzn=absentReason(p.id,curDate());
     var reasonTxt=off?("今日"+(rzn||"不排")):rb?rb:blocked?("同時段已排："+occ[p.id]):"";
     var subT=warn?reasonTxt:cntTxt,subCol=off?C.red:(rb||blocked)?C.amber:C.sub;
@@ -1059,8 +1070,8 @@ function livePlan(){
     events.push({range:rng,min:toMin(rng),label:d.label,group:planGroup(d),people:ppl,keepAll:!!d.keepAll});
   });
   (state.guard&&state.guard.days?state.guard.days:[]).forEach(function(day){
-    if(day.date!==date.replace(/[\uff08(].*$/,""))return;
-    day.shifts.forEach(function(sh){if(!sh.assigned.length)return;events.push({range:guardRange(sh.code),min:toMin(sh.code.slice(0,2)+"00"),label:"\u7ad9\u54e8 "+shiftHM(sh.code)+(sh.loc?(" "+sh.loc):""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});
+    var _md=date.replace(/[\uff08(].*$/,"");
+    day.shifts.forEach(function(sh){if((sh.date||day.date)!==_md)return;if(!sh.assigned.length)return;events.push({range:guardRange(sh.code),min:toMin(sh.code.slice(0,2)+"00"),label:"\u7ad9\u54e8 "+shiftHM(sh.code)+(sh.loc?(" "+sh.loc):""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});
   });
   var mdOnly=date.replace(/[\uff08(].*$/,""),rests=[],outs=[];
   PEOPLE.forEach(function(p){var rec=absenceRec(p.id,mdOnly);if(!rec)return;if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,reason:rec.reason,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});
@@ -1095,13 +1106,13 @@ function planFromImport(date,entries,weekday){
   var mdOnly=date.replace(/[\uff08(].*$/,""),byCat={};
   entries.forEach(function(e){var k=e.g+"|"+e.c;if(!byCat[k])byCat[k]={label:e.c,group:e.g,people:[],time:e.t||""};if(byCat[k].people.indexOf(e.p)<0)byCat[k].people.push(e.p);if(!byCat[k].time&&e.t)byCat[k].time=e.t;});
   var events=Object.keys(byCat).map(function(k){var o=byCat[k],rng=o.time||importSlotTime(o.label,o.group);return {range:rng,min:toMin(rng),label:o.label,group:o.group,people:o.people,keepAll:false};});
-  (state.guard&&state.guard.days?state.guard.days:[]).forEach(function(day){if(day.date!==mdOnly)return;day.shifts.forEach(function(sh){if(!sh.assigned.length)return;events.push({range:guardRange(sh.code),min:toMin(sh.code.slice(0,2)+"00"),label:"\u7ad9\u54e8 "+shiftHM(sh.code)+(sh.loc?(" "+sh.loc):""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});});
+  (state.guard&&state.guard.days?state.guard.days:[]).forEach(function(day){day.shifts.forEach(function(sh){if((sh.date||day.date)!==mdOnly)return;if(!sh.assigned.length)return;events.push({range:guardRange(sh.code),min:toMin(sh.code.slice(0,2)+"00"),label:"\u7ad9\u54e8 "+shiftHM(sh.code)+(sh.loc?(" "+sh.loc):""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});});
   var rests=[],outs=[];PEOPLE.forEach(function(p){var rec=absenceRec(p.id,mdOnly);if(!rec)return;if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,reason:rec.reason,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});
   return {date:mdOnly,weekday:weekday||"",schedule:mkSchedItems(DEFAULT_SCHED),events:events,rests:rests,outs:outs,ts:Date.now()};
 }
 function savePlan(date){var lp=livePlan();if(!lp.events.length&&!(state.schedule&&state.schedule.loaded))return;state.plans[date]={date:date,weekday:lp.weekday,schedule:lp.schedule,events:lp.events,ts:Date.now()};}
 function eventsFromDuties(duties){var events=[];(duties||[]).forEach(function(d){if(d.removed)return;var ppl=d.keepAll?PEOPLE.map(function(p){return p.id;}):(d.assigned||[]).slice();if(!ppl.length)return;var rng=d.schedTime||d.time||"";events.push({range:rng,min:toMin(rng),label:d.label,group:planGroup(d),people:ppl,keepAll:!!d.keepAll});});return events;}
-function guardEventsFor(mdOnly){var events=[];(state.guard&&state.guard.days?state.guard.days:[]).forEach(function(day){if(day.date!==mdOnly)return;day.shifts.forEach(function(sh){if(!sh.assigned.length)return;events.push({range:guardRange(sh.code),min:toMin(sh.code.slice(0,2)+"00"),label:"\u7ad9\u54e8 "+shiftHM(sh.code)+(sh.loc?(" "+sh.loc):""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});});return events;}
+function guardEventsFor(mdOnly){var events=[];(state.guard&&state.guard.days?state.guard.days:[]).forEach(function(day){day.shifts.forEach(function(sh){if((sh.date||day.date)!==mdOnly)return;if(!sh.assigned.length)return;events.push({range:guardRange(sh.code),min:toMin(sh.code.slice(0,2)+"00"),label:"\u7ad9\u54e8 "+shiftHM(sh.code)+(sh.loc?(" "+sh.loc):""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});});return events;}
 /* ---------- 臨時行程（額外勤務，存進 log 用 x_ id，不會被排班板覆蓋，會併入公差次數＋時間軸） ---------- */
 function isExtra(e){return e&&(e.x===1||/^x_/.test(String(e.id)));}
 function extraLogFor(md){return state.log.filter(function(e){return isExtra(e)&&String(e.date).replace(/[（(].*$/,"")===md;});}
