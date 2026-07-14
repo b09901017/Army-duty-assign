@@ -161,6 +161,7 @@ function payload(){return JSON.stringify({names:state.names,log:state.log,mealQu
    規則：同一天取「後修改的」；刪除靠墓碑 tomb[日期]=時間；清空統計靠 wipe=時間。
    這樣某支裝置資料不全時，只會補上、不會把別人的歷史削掉。 */
 function mdOf(x){return String(x).replace(/[（(].*$/,"");}
+function dayKey(x){var s=String(x==null?"":x).replace(/[（(].*$/,"");var m=s.match(/(\d{1,2})\s*\/\s*(\d{1,2})/);return m?(parseInt(m[1],10)+"/"+parseInt(m[2],10)):s.trim();}
 function mergeTomb(rt){var out={};for(var k in state.tomb)out[k]=state.tomb[k];for(var k2 in (rt||{}))if(!out[k2]||rt[k2]>out[k2])out[k2]=rt[k2];return out;}
 function killed(md,ts,tomb,wipe){ts=ts||0;if(wipe&&ts<=wipe)return true;if(tomb[md]&&ts<=tomb[md])return true;return false;}
 function mergeBoards(rem,tomb,wipe){
@@ -282,7 +283,12 @@ function connectSync(url){
 function disconnectSync(){state.syncUrl="";try{localStorage.removeItem(SYNC_KEY);}catch(e){}state.syncStatus="";state.syncOpen=false;if(pollTimer)clearInterval(pollTimer);flash("已中斷同步（改回只存本機）");render();}
 
 var HIST={h:{},cg:{},g:{}};
-function getHistory(){var h={},cg={},g={};PEOPLE.forEach(function(p){h[p.id]={};g[p.id]={};});state.log.forEach(function(e){e.entries.forEach(function(x){if(!h[x.p])h[x.p]={};h[x.p][x.c]=(h[x.p][x.c]||0)+1;var grp=x.g||deriveGroup(x.c);cg[x.c]=grp;if(!g[x.p])g[x.p]={};g[x.p][grp]=(g[x.p][grp]||0)+1;});});return {h:h,cg:cg,g:g};}
+function getHistory(){var h={},cg={},g={};PEOPLE.forEach(function(p){h[p.id]={};g[p.id]={};});
+  // 排班板（b_）紀錄依「天」去重：同一天只留最新一筆，避免舊版不同日期格式造成重複計次。臨時行程（x_）各自保留。
+  var boardByDay={},list=[];
+  state.log.forEach(function(e){if(isExtra(e)){list.push(e);return;}var k=dayKey(e.date),old=boardByDay[k];if(!old||(e.ts||0)>=(old.ts||0))boardByDay[k]=e;});
+  for(var k in boardByDay)list.push(boardByDay[k]);
+  list.forEach(function(e){e.entries.forEach(function(x){if(!h[x.p])h[x.p]={};h[x.p][x.c]=(h[x.p][x.c]||0)+1;var grp=x.g||deriveGroup(x.c);cg[x.c]=grp;if(!g[x.p])g[x.p]={};g[x.p][grp]=(g[x.p][grp]||0)+1;});});return {h:h,cg:cg,g:g};}
 function refreshHist(){HIST=getHistory();}
 function sortCats(cats,h){var go={"打掃":0,"公差":1,"大公差":2,"小公差":3,"打飯":4,"分菜":5};return cats.sort(function(a,b){var ga=go[HIST.cg[a]||deriveGroup(a)],gb=go[HIST.cg[b]||deriveGroup(b)];return ga-gb||h[b]-h[a];});}
 function total(id){return sum(HIST.h[id]||{});}
@@ -370,28 +376,36 @@ function buildFilled(){
   var extra=state.duties.filter(function(d){return d.kind==="manual"&&!d.removed&&(d.keepAll||d.assigned.length);}).map(function(d){return d.label+"："+(d.keepAll?"261":d.assigned.map(nameOf).join("+"));});
   return base+(extra.length?"\n"+extra.join("\n"):"");
 }
+function hm4(range){var s=String(range||"").split(/[-~–—]/)[0].replace(/\D/g,"");if(s.length===3)s="0"+s;return s.slice(0,4);}
+function copyDutyLine(it){var g=it.group,lb=it.label||"";
+  if(g==="站哨")return lb;                       // 已含時段，如「站哨 00:00–02:00」
+  if(!lb)return g;                                // 補休／不在（rest）→ 只顯示原因
+  if(g==="打飯"){var s=/早/.test(lb)?"早":/(午|中)/.test(lb)?"午":/晚/.test(lb)?"晚":"";return "打飯"+s;}
+  if(g==="打掃")return "掃"+lb;
+  if(g==="分菜")return lb;                        // 分菜早／中／晚
+  if(g==="公差"||g==="大公差"||g==="小公差")return g+"："+lb;
+  return lb;}
 function buildPersonList(){
-  var date=extractDate(state.gongban.raw)||todayLabel();
-  var wm=state.gongban.raw.match(/[（(]([一二三四五六日])[)）]/);if(wm)date+="（"+wm[1]+"）";
-  var out=["📋 "+date+" 個人分工","━━━━━━━━━━━"];
+  var lp=livePlan();
+  var dl=lp.date+(lp.weekday?("（"+lp.weekday+"）"):"");
+  var out=["📋 "+dl+" 個人分工","━━━━━━━━━━━"];
+  var outMap={};(lp.outs||[]).forEach(function(o){outMap[o.pid]=o.reason;});
   PEOPLE.forEach(function(p){
-    var meals=[],bp={AM:[],NOON:[],AFT:[],PM:[]},gc=[],guards=[];
-    state.duties.forEach(function(d){
-      if(d.removed)return;if(!(d.keepAll||d.assigned.indexOf(p.id)>=0))return;
-      var suf=d.keepAll?"（全班）":"";
-      if(d.kind==="meal")meals.push(d.period==="AM"?"早":d.period==="NOON"?"午":"晚");
-      else if(d.period==="GC")gc.push((d.time?d.time+" ":"")+d.label+suf);
-      else bp[d.period].push(d.label+suf);
+    out.push("");
+    var whole=outMap[p.id],items=personDayItems(lp,p.id);
+    out.push(p.id+"　"+nameOf(p.id)+(whole?("（"+whole+"·整天不在）"):""));
+    if(whole&&!items.length)return;
+    if(!items.length){out.push("· （今日無勤務）");return;}
+    var timed=[],untimed=[];
+    items.forEach(function(it){
+      var line=copyDutyLine(it);if(!line)return;
+      if(it.group==="站哨"){timed.push({min:(it.min==null?99999:it.min),text:line});}
+      else if(it.range){timed.push({min:(it.min==null?99999:it.min),text:hm4(it.range)+" "+line});}
+      else untimed.push(line);
     });
-    var _gd=date.replace(/[（(].*$/,"");state.guard.days.forEach(function(day){day.shifts.forEach(function(sh){if((sh.date||day.date)!==_gd)return;if(sh.assigned.indexOf(p.id)>=0)guards.push(shiftHM(sh.code)+(sh.loc||""));});});
-    out.push("");out.push(p.id+"　"+nameOf(p.id));
-    var any=false;
-    if(meals.length){out.push("· 打飯："+meals.join("、"));any=true;}
-    var cp=[];if(bp.AM.length)cp.push("上午 "+bp.AM.join("、"));if(bp.NOON.length)cp.push("中午 "+bp.NOON.join("、"));if(bp.AFT.length)cp.push("下午 "+bp.AFT.join("、"));if(bp.PM.length)cp.push("晚間 "+bp.PM.join("、"));
-    if(cp.length){out.push("· 打掃："+cp.join("；"));any=true;}
-    if(gc.length){out.push("· 公差："+gc.join("、"));any=true;}
-    if(guards.length){out.push("· 站哨："+guards.join("、"));any=true;}
-    if(!any)out.push("· （今日無勤務）");
+    timed.sort(function(a,b){return a.min-b.min;});
+    timed.forEach(function(t){out.push(t.text);});
+    untimed.forEach(function(u){out.push("- "+u);});
   });
   return out.join("\n").replace(/\s+$/,"");
 }
@@ -400,22 +414,22 @@ function shiftHM(code){var a=code.slice(0,2),b=code.slice(2,4);return (a==="24"?
 function normMD(s){var m=String(s||"").match(/(\d{1,2})\s*\/\s*(\d{1,2})/);return m?(parseInt(m[1],10)+"/"+parseInt(m[2],10)):"";}
 function parseGuard(text){
   var lines=text.replace(/\r/g,"").split("\n"),days=[],meta=[],si=0;
-  var curDay=null,prevStart=-1,inD2=false;
+  var curDay=null;
   lines.forEach(function(raw){
     var t=raw.trim();
     var dm=t.match(/^(\d{1,2})\s*\/\s*(\d{1,2})/);
     if(dm&&/[-−–—~]/.test(t)){
       var ds=t.match(/(\d{1,2})\s*\/\s*(\d{1,2})/g)||[];
       var d1=normMD(ds[0]||""),d2=ds[1]?normMD(ds[1]):addDaysMD(d1,1);
-      curDay={date:d1,date2:d2,range:t,shifts:[]};days.push(curDay);prevStart=-1;inD2=false;
+      curDay={date:d1,date2:d2,range:t,shifts:[]};days.push(curDay);
       meta.push({type:"day",dayIdx:days.length-1});return;
     }
     var sm=t.match(/^(\d{4})\s*([（(][^）)]*[）)])?/);
     if(sm&&curDay){
       var code=sm[1],st=parseInt(code.slice(0,2),10);
-      if(prevStart>=0&&st<prevStart)inD2=true;   // 時間往回跳＝跨過午夜，改記到第二天
-      prevStart=st;
-      var sh={id:"g"+(si++),code:code,loc:sm[2]||"",assigned:[],date:(inD2?curDay.date2:curDay.date)};
+      // 只有 22:00–23:59 起的班（如 2224）在午夜前＝第一天；24:00 以後與白天（0–21、24）都算第二天
+      var toD2=!(st>=22&&st<24);
+      var sh={id:"g"+(si++),code:code,loc:sm[2]||"",assigned:[],date:(toD2?curDay.date2:curDay.date)};
       curDay.shifts.push(sh);meta.push({type:"shift",shiftId:sh.id});return;
     }
     meta.push({type:"static",text:raw});
@@ -566,9 +580,9 @@ function commit(){
   if(!entries.length){flash("目前沒有可計入的分配");return;}
   var date=state.activeDate||extractDate(state.gongban.raw)||todayLabel();
   savePlan(date);
-  var lid="b_"+date;
-  state.log=state.log.filter(function(e){return String(e.id)!==lid;});
-  state.log.push({id:lid,date:date,entries:entries,ts:Date.now()});
+  var dk=dayKey(date),lid="b_"+dk;
+  state.log=state.log.filter(function(e){return isExtra(e)||dayKey(e.date)!==dk;});
+  state.log.push({id:lid,date:dk,entries:entries,ts:Date.now()});
   var bd=state.boards[date];
   if(!(bd&&bd.committed)){
     var mealPpl=[];state.duties.filter(function(d){return d.kind==="meal"&&!d.removed;}).sort(function(a,b){return pord(a.period)-pord(b.period);}).forEach(function(d){d.assigned.forEach(function(pid){mealPpl.push(pid);});});
@@ -1378,7 +1392,7 @@ function handle(a,el){
   else if(a==="af-add"){var f=state.addForm;var nm=(f.name||"").trim();if(!nm){flash("先幫勤務取個名字");return;}state.duties.push({id:"m"+Date.now(),kind:"manual",mode:"append",label:nm,time:null,period:f.period,block:(f.period==="GC"?null:f.period),count:f.keepAll?0:Math.max(1,f.count),assigned:[],keepAll:f.keepAll,removed:false,extra:f.extra||null,schedTime:f.time||"",timeSrc:f.time?"manual":""});state.addForm={open:false,name:"",period:"AM",count:1,keepAll:false,extra:null,time:""};render();}
   else if(a==="open-import"){state.importOpen=true;focusEl="import";render();}
   else if(a==="cancel-import"){state.importOpen=false;importText="";render();}
-  else if(a==="do-import"){var it=(importText||"").trim();if(!it){flash("先把公版貼進來");return;}var pr=parseFilled(importText);if(!pr.entries.length){flash("沒抓到我們的名字，確認公版已填好名字");return;}var wm=importText.match(/[（(]([一二三四五六日])[)）]/),md=pr.date.replace(/[（(].*$/,"");state.log=state.log.filter(function(e){return String(e.id)!=="b_"+md;});state.log.push({id:"b_"+md,date:md,entries:pr.entries});boardFromImport(pr.date,pr.entries,wm?wm[1]:"");state.plans[md]=planFromImport(pr.date,pr.entries,wm?wm[1]:"");persist();state.importOpen=false;importText="";flash("已記錄 "+md+"（"+pr.entries.length+" 人次）·排班/行程都更新了");render();}
+  else if(a==="do-import"){var it=(importText||"").trim();if(!it){flash("先把公版貼進來");return;}var pr=parseFilled(importText);if(!pr.entries.length){flash("沒抓到我們的名字，確認公版已填好名字");return;}var wm=importText.match(/[（(]([一二三四五六日])[)）]/),md=dayKey(pr.date);state.log=state.log.filter(function(e){return isExtra(e)||dayKey(e.date)!==md;});state.log.push({id:"b_"+md,date:md,entries:pr.entries,ts:Date.now()});boardFromImport(pr.date,pr.entries,wm?wm[1]:"");state.plans[md]=planFromImport(pr.date,pr.entries,wm?wm[1]:"");persist();state.importOpen=false;importText="";flash("已記錄 "+md+"（"+pr.entries.length+" 人次）·排班/行程都更新了");render();}
   else if(a==="del-day-ask"){state.confirmDelDay=el.getAttribute("data-md");render();}
   else if(a==="del-day-cancel"){state.confirmDelDay="";render();}
   else if(a==="del-day-go"){delDayAll(el.getAttribute("data-md"));}
