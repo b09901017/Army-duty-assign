@@ -86,14 +86,35 @@ function dateToMD(d){return (d.getMonth()+1)+"/"+d.getDate();}
 function addDaysMD(md,n){var d=mdToDate(md);if(!d)return md;d.setDate(d.getDate()+n);return dateToMD(d);}
 function spanMin(str){str=(str||"").replace(/\s/g,"");if(!str)return null;var p=str.split(/[-~\u301c\uff5e\u2013]/);var s=toMin(p[0]);if(s==null)return null;var e=p[1]?toMin(p[1]):s;return [s,e];}
 function fmtSpan(str){var p=(str||"").replace(/\s/g,"").split(/[-~\u301c\uff5e\u2013]/);return p[1]?(hmFmt(p[0])+"\u2013"+hmFmt(p[1])):hmFmt(p[0]);}
-function absenceRec(pid,md){var v=state.absence[md]&&state.absence[md][pid];if(!v)return null;if(typeof v==="string")return {reason:v,range:""};return {reason:v.reason,range:v.range||(v.until?("0530-"+v.until):"")};}
+// 排休／不在：一個人一天可以有多筆（例：補休 0530-0740 ＋ 1220-1430）。
+// 存法：只有一筆時維持舊格式（物件），兩筆以上存陣列 → 舊版與試算表仍讀得到單筆。
+function absOne(x){if(!x)return null;if(typeof x==="string")return {reason:x,range:""};if(!x.reason)return null;return {reason:x.reason,range:x.range||(x.until?("0530-"+x.until):"")};}
+function absNorm(v){var out=[];if(!v)return out;var arr=Array.isArray(v)?v:[v];arr.forEach(function(x){var o=absOne(x);if(o)out.push(o);});
+  out.sort(function(a,b){if(!a.range)return -1;if(!b.range)return 1;var x=spanMin(a.range),y=spanMin(b.range);return ((x?x[0]:0)-(y?y[0]:0));});return out;}
+function absenceRecs(pid,md){return absNorm(state.absence[md]&&state.absence[md][pid]);}
+function absenceRec(pid,md){var a=absenceRecs(pid,md);return a.length?a[0]:null;}   // 代表值：整天不在優先，否則最早的時段
 function absentReason(pid,md){var r=absenceRec(pid,md);return r?r.reason:null;}
-function fullDayOut(pid,md){var r=absenceRec(pid,md);return !!(r&&!r.range);}
-function restRange(pid,md){var r=absenceRec(pid,md);return (r&&r.range)?r.range:"";}
-function restBlock(pid,duty){var rec=absenceRec(pid,curDate());if(!rec||!rec.range)return null;var r=spanMin(rec.range),d=spanMin(duty.schedTime||duty.time||"");if(!r||!d)return null;return (d[0]<r[1]&&d[1]>r[0])?((rec.reason||"補休")+" "+fmtSpan(rec.range)):null;}
-function setAbsent(pid,md,rec){if(!state.absence[md])state.absence[md]={};state.absence[md][pid]=(typeof rec==="string")?{reason:rec,range:""}:rec;}
+function fullDayOut(pid,md){return absenceRecs(pid,md).some(function(r){return !r.range;});}
+function restRange(pid,md){var r=absenceRecs(pid,md).filter(function(x){return x.range;});return r.length?r[0].range:"";}
+function restBlock(pid,duty){var d=spanMin(duty.schedTime||duty.time||"");if(!d)return null;var hit=null;
+  absenceRecs(pid,curDate()).forEach(function(rec){if(hit||!rec.range)return;var r=spanMin(rec.range);if(!r)return;if(d[0]<r[1]&&d[1]>r[0])hit=(rec.reason||"補休")+" "+fmtSpan(rec.range);});
+  return hit;}
+function writeAbs(pid,md,list){
+  list=(list||[]).filter(function(x){return x&&x.reason;});
+  if(!list.length){clearAbsent(pid,md);return;}
+  if(!state.absence[md])state.absence[md]={};
+  state.absence[md][pid]=(list.length===1)?{reason:list[0].reason,range:list[0].range||""}:list.map(function(x){return {reason:x.reason,range:x.range||""};});}
+function setAbsent(pid,md,rec){var o=absOne(rec);writeAbs(pid,md,o?[o]:[]);}          // 取代當天全部
+function addAbsent(pid,md,rec){                                                        // 追加一筆（同一天可多個時段）
+  var o=absOne(rec);if(!o)return;
+  var list=absenceRecs(pid,md);
+  if(!o.range)list=[o];                                                                // 整天不在 → 蓋掉當天其他時段
+  else{list=list.filter(function(x){return x.range&&!(x.range===o.range&&x.reason===o.reason);});list.push(o);}
+  writeAbs(pid,md,list);}
+function delAbsentAt(pid,md,i){var list=absenceRecs(pid,md);if(i<0||i>=list.length)return;list.splice(i,1);writeAbs(pid,md,list);}
 function clearAbsent(pid,md){if(state.absence[md]){delete state.absence[md][pid];if(!Object.keys(state.absence[md]).length)delete state.absence[md];}}
-function personAbsences(pid){var out=[];for(var md in state.absence){var r=absenceRec(pid,md);if(r)out.push({md:md,reason:r.reason,range:r.range||"",k:dnum(md)});}out.sort(function(a,b){return a.k-b.k;});return out;}
+function personAbsences(pid){var out=[];for(var md in state.absence){absenceRecs(pid,md).forEach(function(r,i){out.push({md:md,reason:r.reason,range:r.range||"",i:i,k:dnum(md)});});}
+  out.sort(function(a,b){if(a.k!==b.k)return a.k-b.k;var x=a.range?spanMin(a.range):null,y=b.range?spanMin(b.range):null;return ((x?x[0]:-1)-(y?y[0]:-1));});return out;}
 function syncAvail(){var cd=curDate();PEOPLE.forEach(function(p){state.available[p.id]=!fullDayOut(p.id,cd);});}
 function extractDate(t){var m=t.match(/(\d{1,2})\s*[\/月]\s*(\d{1,2})/);return m?(parseInt(m[1],10)+"/"+parseInt(m[2],10)):null;}
 function pord(p){return p==="AM"?0:p==="NOON"?1:2;}
@@ -377,9 +398,10 @@ function buildFilled(){
   return base+(extra.length?"\n"+extra.join("\n"):"");
 }
 function hm4(range){var s=String(range||"").split(/[-~–—]/)[0].replace(/\D/g,"");if(s.length===3)s="0"+s;return s.slice(0,4);}
+function noColon(s){return String(s||"").replace(/[:：]/g,"").replace(/[–—~]/g,"-");}  // 00:00–02:00 → 0000-0200
 function copyDutyLine(it){var g=it.group,lb=it.label||"";
-  if(g==="站哨")return lb;                       // 已含時段，如「站哨 00:00–02:00」
-  if(!lb)return g;                                // 補休／不在（rest）→ 只顯示原因
+  if(g==="站哨")return noColon(lb);                // 站哨 0000-0200（已含時段）
+  if(!lb)return g+(it.range?(" "+noColon(it.range)):"");   // 補休／不在 → 補休 2200-2400
   if(g==="打飯"){var s=/早/.test(lb)?"早":/(午|中)/.test(lb)?"午":/晚/.test(lb)?"晚":"";return "打飯"+s;}
   if(g==="打掃")return "掃"+lb;
   if(g==="分菜")return lb;                        // 分菜早／中／晚
@@ -393,13 +415,16 @@ function buildPersonList(){
   PEOPLE.forEach(function(p){
     out.push("");
     var whole=outMap[p.id],items=personDayItems(lp,p.id);
+    // 整天不在的人：全班一起的勤務（261）不用列，只寫他不在
+    if(whole)items=items.filter(function(it){return !it.keepAll;});
     out.push(p.id+"　"+nameOf(p.id)+(whole?("（"+whole+"·整天不在）"):""));
     if(whole&&!items.length)return;
     if(!items.length){out.push("· （今日無勤務）");return;}
     var timed=[],untimed=[];
     items.forEach(function(it){
       var line=copyDutyLine(it);if(!line)return;
-      if(it.group==="站哨"){timed.push({min:(it.min==null?99999:it.min),text:line});}
+      var selfTimed=(it.group==="站哨")||!it.label;   // 站哨、補休：整行已含時段
+      if(selfTimed){timed.push({min:(it.min==null?99999:it.min),text:line});}
       else if(it.range){timed.push({min:(it.min==null?99999:it.min),text:hm4(it.range)+" "+line});}
       else untimed.push(line);
     });
@@ -665,7 +690,7 @@ function pasteCard(){
   var n=state.duties.filter(function(d){return !d.removed;}).length;
   return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:'+C.greenSoft+';border:1px solid '+C.green+';border-radius:12px;padding:11px 14px;"><div style="display:flex;align-items:center;gap:8px;color:'+C.greenDeep+';font-weight:700;font-size:13.5px;">'+icon("check",16,C.green)+' '+esc(state.activeDate||"")+' · '+n+' 項</div><div style="display:flex;gap:12px;"><button class="btn" data-action="repaste" style="border:none;background:transparent;color:'+C.green+';font-weight:700;font-size:13px;text-decoration:underline;">重新貼上</button><button class="btn" data-action="board-close" style="border:none;background:transparent;color:'+C.sub+';font-weight:700;font-size:13px;">收起</button></div></div>';
 }
-function availCard(){var cd=curDate();var chips=PEOPLE.map(function(p){var rec=absenceRec(p.id,cd);var full=!!(rec&&!rec.range);var on=!full;var col=rec?absColor(rec.reason):C.green;var tag=rec?'<span style="font-size:9.5px;font-weight:800;color:'+col+';margin-left:1px;">'+esc(rec.reason)+(rec.range?fmtSpan(rec.range):"")+'</span>':"";return '<button class="btn tap" data-action="avail" data-id="'+p.id+'" style="display:flex;align-items:center;gap:5px;padding:5px 9px 5px 5px;border-radius:999px;border:1px solid '+(rec?col:C.green)+';background:'+(rec?col+"12":C.greenSoft)+';color:'+(on?C.greenDeep:C.sub)+';opacity:'+(on?1:0.9)+';">'+badge(p.code,20,on?"green":"mute")+'<span style="font-size:12.5px;font-weight:600;text-decoration:'+(full?"line-through":"none")+';">'+esc(nameOf(p.id))+'</span>'+tag+'</button>';}).join("");return '<div style="margin-top:14px;">'+card(label("今日出勤（"+esc(cd)+"）· 點掉＝整天不排")+'<div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;">'+chips+'</div><button class="btn" data-action="open-absence" style="width:100%;margin-top:11px;padding:9px;border-radius:10px;border:1px dashed '+C.line+';background:transparent;color:'+C.sub+';font-weight:700;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px;">'+icon("calendar",14)+' 排休／不在（補休時段、大公差整週…）</button>')+'</div>';}
+function availCard(){var cd=curDate();var chips=PEOPLE.map(function(p){var recs=absenceRecs(p.id,cd),rec=recs.length?recs[0]:null;var full=fullDayOut(p.id,cd);var on=!full;var col=rec?absColor(rec.reason):C.green;var tag=recs.length?'<span style="font-size:9.5px;font-weight:800;color:'+col+';margin-left:1px;">'+recs.map(function(r){return esc(r.reason)+(r.range?fmtSpan(r.range):"");}).join("・")+'</span>':"";return '<button class="btn tap" data-action="avail" data-id="'+p.id+'" style="display:flex;align-items:center;gap:5px;padding:5px 9px 5px 5px;border-radius:999px;border:1px solid '+(rec?col:C.green)+';background:'+(rec?col+"12":C.greenSoft)+';color:'+(on?C.greenDeep:C.sub)+';opacity:'+(on?1:0.9)+';">'+badge(p.code,20,on?"green":"mute")+'<span style="font-size:12.5px;font-weight:600;text-decoration:'+(full?"line-through":"none")+';">'+esc(nameOf(p.id))+'</span>'+tag+'</button>';}).join("");return '<div style="margin-top:14px;">'+card(label("今日出勤（"+esc(cd)+"）· 點掉＝整天不排")+'<div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;">'+chips+'</div><button class="btn" data-action="open-absence" style="width:100%;margin-top:11px;padding:9px;border-radius:10px;border:1px dashed '+C.line+';background:transparent;color:'+C.sub+';font-weight:700;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px;">'+icon("calendar",14)+' 排休／不在（補休時段、大公差整週…）</button>')+'</div>';}
 function mealCell(period){
   var d=null;state.duties.forEach(function(x){if(x.kind==="meal"&&x.period===period&&!x.removed)d=x;});
   var pl=PERIODS.filter(function(p){return p.key===period;})[0].meal;
@@ -965,7 +990,7 @@ function absenceInner(){
   if(!pid)return head+'<div style="font-size:12px;color:'+C.sub+';margin-bottom:10px;">先選一個人。名稱可自訂（例：大公差、返診、留守）。時段<b>留空＝整天不在</b>；填一段（例 1200-2200）＝只擋那段，其他時間照排。</div>'+people+'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:16px 0;">↑ 先選一個人</div>';
   // 原因：預設＋已用過的自訂當快捷鍵，點一下填進輸入框；輸入框才是真正採用的名稱
   var presets=["補休","大公差","休假","其他"],usedR={};
-  for(var md0 in state.absence){var rec0=state.absence[md0];for(var p0 in rec0){var v0=rec0[p0],rr=(typeof v0==="string")?v0:(v0&&v0.reason);if(rr&&presets.indexOf(rr)<0)usedR[rr]=1;}}
+  for(var md0 in state.absence){var rec0=state.absence[md0];for(var p0 in rec0){absNorm(rec0[p0]).forEach(function(v0){var rr=v0.reason;if(rr&&presets.indexOf(rr)<0)usedR[rr]=1;});}}
   var chipNames=presets.concat(Object.keys(usedR));
   var rseg='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;">'+chipNames.map(function(nm){var on=f.reason===nm,c=absColor(nm);return '<button class="btn" data-action="abs-reason" data-r="'+esc(nm)+'" style="padding:6px 11px;border-radius:8px;font-size:12px;font-weight:700;border:1px solid '+(on?c:C.line)+';background:'+(on?c+"1A":C.surface)+';color:'+(on?c:C.sub)+';">'+esc(nm)+'</button>';}).join("")+'</div>';
   var rcol=absColor(f.reason);
@@ -982,7 +1007,7 @@ function absenceInner(){
   var preview='<div style="font-size:11.5px;color:'+C.sub+';margin-top:10px;line-height:1.6;">'+esc(f.reason||"（先取名）")+'　'+daysTxt+'　·　'+timeTxt+'</div>';
   var addForm=card(label("新增")+rseg+nameIn+lseg+startIn+rangeIn+preview+'<button class="btn" data-action="abs-add" style="width:100%;margin-top:12px;padding:11px;border-radius:10px;border:none;background:'+C.green+';color:#fff;font-weight:800;font-size:14px;">加入</button>',"margin-bottom:10px;");
   var list=personAbsences(pid);
-  var listHtml=list.length?'<div style="display:flex;flex-wrap:wrap;gap:6px;">'+list.map(function(a){var c=absColor(a.reason);return '<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:'+c+';background:'+c+'14;padding:4px 5px 4px 10px;border-radius:999px;">'+esc(a.md)+' '+esc(a.reason)+(a.range?(" "+esc(fmtSpan(a.range))):"")+'<button class="btn" data-action="abs-del" data-id="'+pid+'" data-md="'+esc(a.md)+'" style="width:18px;height:18px;border-radius:999px;border:none;background:'+c+'22;color:'+c+';display:flex;align-items:center;justify-content:center;">'+icon("x",11,c)+'</button></span>';}).join("")+'</div>':'<div style="font-size:12.5px;color:'+C.sub+';padding:8px 2px;">目前沒有記錄。</div>';
+  var listHtml=list.length?'<div style="display:flex;flex-wrap:wrap;gap:6px;">'+list.map(function(a){var c=absColor(a.reason);return '<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:'+c+';background:'+c+'14;padding:4px 5px 4px 10px;border-radius:999px;">'+esc(a.md)+' '+esc(a.reason)+(a.range?(" "+esc(fmtSpan(a.range))):"")+'<button class="btn" data-action="abs-del" data-id="'+pid+'" data-md="'+esc(a.md)+'" data-i="'+a.i+'" style="width:18px;height:18px;border-radius:999px;border:none;background:'+c+'22;color:'+c+';display:flex;align-items:center;justify-content:center;">'+icon("x",11,c)+'</button></span>';}).join("")+'</div>':'<div style="font-size:12.5px;color:'+C.sub+';padding:8px 2px;">目前沒有記錄。</div>';
   return head+people+addForm+label("已排（"+esc(nameOf(pid))+"）")+'<div style="margin-top:8px;">'+listHtml+'</div><button class="btn" data-action="close-sheet" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:'+C.green+';color:#fff;font-weight:800;font-size:15px;">完成</button>';
 }
 function extraById(id){for(var i=0;i<state.log.length;i++)if(String(state.log[i].id)===String(id))return state.log[i];return null;}
@@ -1088,7 +1113,7 @@ function livePlan(){
     day.shifts.forEach(function(sh){if((sh.date||day.date)!==_md)return;if(!sh.assigned.length)return;events.push({range:guardRange(sh.code),min:toMin(sh.code.slice(0,2)+"00"),label:"\u7ad9\u54e8 "+shiftHM(sh.code)+(sh.loc?(" "+sh.loc):""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});
   });
   var mdOnly=date.replace(/[\uff08(].*$/,""),rests=[],outs=[];
-  PEOPLE.forEach(function(p){var rec=absenceRec(p.id,mdOnly);if(!rec)return;if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,reason:rec.reason,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});
+  PEOPLE.forEach(function(p){absenceRecs(p.id,mdOnly).forEach(function(rec){if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,reason:rec.reason,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});});
   return {date:date,weekday:wm?wm[1]:"",schedule:effectiveSchedule(),events:events,rests:rests,outs:outs};
 }
 function liveHasData(){var lp=livePlan();return (state.schedule&&state.schedule.loaded)||lp.events.length>0||(lp.rests&&lp.rests.length>0)||(lp.outs&&lp.outs.length>0);}
@@ -1121,7 +1146,7 @@ function planFromImport(date,entries,weekday){
   entries.forEach(function(e){var k=e.g+"|"+e.c;if(!byCat[k])byCat[k]={label:e.c,group:e.g,people:[],time:e.t||""};if(byCat[k].people.indexOf(e.p)<0)byCat[k].people.push(e.p);if(!byCat[k].time&&e.t)byCat[k].time=e.t;});
   var events=Object.keys(byCat).map(function(k){var o=byCat[k],rng=o.time||importSlotTime(o.label,o.group);return {range:rng,min:toMin(rng),label:o.label,group:o.group,people:o.people,keepAll:false};});
   (state.guard&&state.guard.days?state.guard.days:[]).forEach(function(day){day.shifts.forEach(function(sh){if((sh.date||day.date)!==mdOnly)return;if(!sh.assigned.length)return;events.push({range:guardRange(sh.code),min:toMin(sh.code.slice(0,2)+"00"),label:"\u7ad9\u54e8 "+shiftHM(sh.code)+(sh.loc?(" "+sh.loc):""),group:"\u7ad9\u54e8",people:sh.assigned.slice(),keepAll:false});});});
-  var rests=[],outs=[];PEOPLE.forEach(function(p){var rec=absenceRec(p.id,mdOnly);if(!rec)return;if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,reason:rec.reason,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});
+  var rests=[],outs=[];PEOPLE.forEach(function(p){absenceRecs(p.id,mdOnly).forEach(function(rec){if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,reason:rec.reason,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});});
   return {date:mdOnly,weekday:weekday||"",schedule:mkSchedItems(DEFAULT_SCHED),events:events,rests:rests,outs:outs,ts:Date.now()};
 }
 function savePlan(date){var lp=livePlan();if(!lp.events.length&&!(state.schedule&&state.schedule.loaded))return;state.plans[date]={date:date,weekday:lp.weekday,schedule:lp.schedule,events:lp.events,ts:Date.now()};}
@@ -1147,7 +1172,7 @@ function saveExtraEvent(f){
   persist();return "";
 }
 function delExtraEvent(id){state.tombIds[String(id)]=Date.now();state.log=state.log.filter(function(e){return String(e.id)!==String(id);});persist();}
-function restsOutsFor(mdOnly){var rests=[],outs=[];PEOPLE.forEach(function(p){var rec=absenceRec(p.id,mdOnly);if(!rec)return;if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,reason:rec.reason,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});return {rests:rests,outs:outs};}
+function restsOutsFor(mdOnly){var rests=[],outs=[];PEOPLE.forEach(function(p){absenceRecs(p.id,mdOnly).forEach(function(rec){if(rec.range){var sp=spanMin(rec.range);rests.push({pid:p.id,reason:rec.reason,range:rec.range,s:sp?sp[0]:null,e:sp?sp[1]:null});}else outs.push({pid:p.id,reason:rec.reason});});});return {rests:rests,outs:outs};}
 function planForBoard(date){
   var mdOnly=(date||"").replace(/[（(].*$/,""),duties,schedule,wd,plan=null;
   var extra=extraEventsFor(mdOnly);
@@ -1219,7 +1244,7 @@ function modeA(plan){
 }
 function personDayItems(plan,pid){
   var items=[];
-  (plan.events||[]).forEach(function(e){if(!(e.keepAll||e.people.indexOf(pid)>=0))return;items.push({min:(e.min==null?99999:e.min),range:e.range||"",label:e.label,group:e.group});});
+  (plan.events||[]).forEach(function(e){if(!(e.keepAll||e.people.indexOf(pid)>=0))return;items.push({min:(e.min==null?99999:e.min),range:e.range||"",label:e.label,group:e.group,keepAll:!!e.keepAll});});
   (plan.rests||[]).forEach(function(r){if(r.pid!==pid)return;items.push({min:(r.s==null?99999:r.s),range:r.range||"",label:"",group:(r.reason||"補休")});});
   items.sort(function(a,b){return a.min-b.min;});
   return items;
@@ -1349,8 +1374,8 @@ function handle(a,el){
   else if(a==="abs-reason"){state.absForm.reason=el.getAttribute("data-r");refreshSheet();}
   else if(a==="abs-len"){state.absForm.len=parseInt(el.getAttribute("data-n"),10)||1;refreshSheet();}
   else if(a==="abs-range-q"){state.absForm.range=el.getAttribute("data-t");refreshSheet();}
-  else if(a==="abs-add"){var apid=state.sheet.id;if(!apid){flash("先選一個人");return;}var f=state.absForm,rsn=(f.reason||"").trim();if(!rsn){flash("先幫這次不在取個名稱（例：大公差、補休）");return;}var s0=(f.start||"").trim()||curDate();if(!/\d{1,2}\/\d{1,2}/.test(s0)){flash("日期格式如 7/8");return;}var rg=(f.range||"").replace(/\s/g,"");if(rg&&(!spanMin(rg)||rg.indexOf("-")<0)){flash("時段格式如 1200-2200（整天請留空）");return;}var days=Math.max(1,f.len||1);for(var ai=0;ai<days;ai++){setAbsent(apid,addDaysMD(s0,ai),{reason:rsn,range:rg});}flash("已記錄 "+nameOf(apid)+" "+rsn+(rg?(" "+fmtSpan(rg)):"")+(days>1?("（"+days+" 天）"):""));syncAvail();persist();refreshSheet();}
-  else if(a==="abs-del"){clearAbsent(parseInt(id,10),el.getAttribute("data-md"));syncAvail();persist();refreshSheet();}
+  else if(a==="abs-add"){var apid=state.sheet.id;if(!apid){flash("先選一個人");return;}var f=state.absForm,rsn=(f.reason||"").trim();if(!rsn){flash("先幫這次不在取個名稱（例：大公差、補休）");return;}var s0=(f.start||"").trim()||curDate();if(!/\d{1,2}\/\d{1,2}/.test(s0)){flash("日期格式如 7/8");return;}var rg=(f.range||"").replace(/\s/g,"");if(rg&&(!spanMin(rg)||rg.indexOf("-")<0)){flash("時段格式如 1200-2200（整天請留空）");return;}var days=Math.max(1,f.len||1);for(var ai=0;ai<days;ai++){addAbsent(apid,addDaysMD(s0,ai),{reason:rsn,range:rg});}flash("已記錄 "+nameOf(apid)+" "+rsn+(rg?(" "+fmtSpan(rg)):"")+(days>1?("（"+days+" 天）"):""));syncAvail();persist();refreshSheet();}
+  else if(a==="abs-del"){var di=parseInt(el.getAttribute("data-i")||"-1",10);if(di>=0)delAbsentAt(parseInt(id,10),el.getAttribute("data-md"),di);else clearAbsent(parseInt(id,10),el.getAttribute("data-md"));syncAvail();persist();refreshSheet();}
   else if(a==="open-dayevt"){state.evtForm={id:null,md:(el.getAttribute("data-md")||curDate()),label:"",range:"",group:"公差",people:[],keepAll:false};openSheet("dayevt",0);}
   else if(a==="dayevt-edit"){var xe=extraById(el.getAttribute("data-x"));if(!xe){flash("找不到");return;}var up=[];(xe.entries||[]).forEach(function(x){if(up.indexOf(x.p)<0)up.push(x.p);});state.evtForm={id:xe.id,md:String(xe.date).replace(/[（(].*$/,""),label:xe.label||"",range:xe.range||"",group:xe.group||"公差",people:up,keepAll:!!xe.keepAll};openSheet("dayevt",0);}
   else if(a==="evt-group"){state.evtForm.group=el.getAttribute("data-g");refreshSheet();}
