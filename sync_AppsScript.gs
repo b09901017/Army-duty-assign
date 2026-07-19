@@ -259,9 +259,20 @@ function dayBreakdown_(obj, date, pid) {
     if (day.date !== date) return;
     (day.shifts || []).forEach(function (sh) { if ((sh.assigned || []).indexOf(pid) >= 0) guard = true; });
   });
-  var abs = null, rec = obj.absence && obj.absence[date] && obj.absence[date][pid];
-  if (rec) abs = (typeof rec === "string") ? { reason: rec, range: "" } : { reason: rec.reason || "", range: rec.range || "" };
-  return { groups: groups, meal: meal, fenca: fenca, guard: guard, abs: abs };
+  var rec = obj.absence && obj.absence[date] && obj.absence[date][pid];
+  return { groups: groups, meal: meal, fenca: fenca, guard: guard, abs: absNorm_(rec) };
+}
+// 排休／不在：一天可以有多筆（陣列），舊資料是單筆（字串或物件）
+function absNorm_(v) {
+  if (!v) return [];
+  var arr = Object.prototype.toString.call(v) === "[object Array]" ? v : [v], out = [];
+  arr.forEach(function (x) {
+    if (!x) return;
+    if (typeof x === "string") { out.push({ reason: x, range: "" }); return; }
+    if (!x.reason) return;
+    out.push({ reason: x.reason, range: x.range || (x.until ? ("0530-" + x.until) : "") });
+  });
+  return out;
 }
 function daySegs_(bd) {
   var segs = [];
@@ -269,11 +280,10 @@ function daySegs_(bd) {
   if (bd.meal.length) segs.push(seg_("打飯 " + bd.meal.join(""), CATCOLOR["打飯"]));
   if (bd.fenca.length) segs.push(seg_("分菜 " + bd.fenca.join(""), CATCOLOR["分菜"]));
   if (bd.guard) segs.push(seg_("站哨", CATCOLOR["站哨"]));
-  if (bd.abs) {
-    var arn = bd.abs.reason || "不在", acol = CATCOLOR[arn] || CATCOLOR["其他"];
-    if (bd.abs.range) segs.push(seg_(arn + " " + fmtSpan_(bd.abs.range), acol));
-    else segs.push(seg_(arn, acol));
-  }
+  (bd.abs || []).forEach(function (ab) {
+    var arn = ab.reason || "不在", acol = CATCOLOR[arn] || CATCOLOR["其他"];
+    segs.push(seg_(ab.range ? (arn + " " + fmtSpan_(ab.range)) : arn, acol));
+  });
   return segs;
 }
 function cumSegs_(obj, pid) {
@@ -284,10 +294,11 @@ function cumSegs_(obj, pid) {
   var gt = (obj.guardTally && obj.guardTally[pid]) || 0; if (gt) segs.push(seg_("站哨 " + gt, CATCOLOR["站哨"]));
   var ac = {}, aorder = [];
   Object.keys(obj.absence || {}).forEach(function (dt) {
-    var rec = obj.absence[dt] && obj.absence[dt][pid]; if (!rec) return;
-    var v = (typeof rec === "string") ? { reason: rec } : rec; var rs = v.reason || "其他";
-    if (STAT_GROUPS.indexOf(rs) >= 0) return;   // 與勤務群組同名（如大公差）已算過，不重複列
-    if (ac[rs] === undefined) aorder.push(rs); ac[rs] = (ac[rs] || 0) + 1;
+    absNorm_(obj.absence[dt] && obj.absence[dt][pid]).forEach(function (v) {
+      var rs = v.reason || "其他";
+      if (STAT_GROUPS.indexOf(rs) >= 0) return;   // 與勤務群組同名（如大公差）已算過，不重複列
+      if (ac[rs] === undefined) aorder.push(rs); ac[rs] = (ac[rs] || 0) + 1;
+    });
   });
   aorder.forEach(function (rs) { segs.push(seg_(rs + " " + ac[rs], CATCOLOR[rs] || CATCOLOR["其他"])); });
   return segs;
@@ -426,10 +437,9 @@ function buildAbsence_(obj, names) {
   Object.keys(absence).forEach(function (md) {
     var rec = absence[md] || {};
     Object.keys(rec).forEach(function (pid) {
-      var v = rec[pid], reason, range;
-      if (typeof v === "string") { reason = v; range = ""; }
-      else { reason = v.reason || ""; range = v.range || (v.until ? ("0530-" + v.until) : ""); }
-      rows.push([md, code_(pid), nameOf_(names, pid), reason, range ? fmtSpan_(range) : "整天"]);
+      absNorm_(rec[pid]).forEach(function (v) {
+        rows.push([md, code_(pid), nameOf_(names, pid), v.reason || "", v.range ? fmtSpan_(v.range) : "整天"]);
+      });
     });
   });
   rows.sort(function (a, b) { return dnum_(a[0]) - dnum_(b[0]) || (a[1] < b[1] ? -1 : 1); });
