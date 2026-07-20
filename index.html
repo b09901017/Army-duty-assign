@@ -360,13 +360,17 @@ function extractTime(label){var m=label.match(/^(\d{3,4}\s*[-~～]\s*\d{3,4}|\d{
 function count261Token(tok){tok=(tok||"").trim();var m;if(/^[（(]?\s*261\s*[）)]?$/.test(tok))return 1;m=tok.match(/^261\s*[*＊]\s*(\d+)$/);if(m)return parseInt(m[1],10);m=tok.match(/^261\s*梯\s*[（(]\s*(\d+)\s*[）)]\s*員?$/);if(m)return parseInt(m[1],10);m=tok.match(/^261\s*梯\s*(\d+)\s*員?$/);if(m)return parseInt(m[1],10);m=tok.match(/^261\s*[（(]\s*(\d+)\s*[）)]$/);if(m)return parseInt(m[1],10);return 0;}
 function find261(line){var m=line.match(/261\s*梯\s*[（(]\s*(\d+)\s*[）)]/);if(m)return {n:parseInt(m[1],10),s:m[0]};m=line.match(/261\s*梯\s*(\d+)\s*員/);if(m)return {n:parseInt(m[1],10),s:m[0]};m=line.match(/261\s*[*＊]\s*(\d+)/);if(m)return {n:parseInt(m[1],10),s:m[0]};m=line.match(/261\s*[（(]\s*(\d+)\s*[）)]/);if(m)return {n:parseInt(m[1],10),s:m[0]};m=line.match(/[（(]\s*261\s*[）)]/);if(m)return {n:1,s:m[0]};if(/(?:^|[^0-9])261(?:[^0-9*＊梯]|$)/.test(line))return {n:1,s:"261"};return null;}
 function timeBlock(t){return "T"+t.replace(/[-~～]/,"");}
+// 認出「我們班 8 人」的名字（含前綴如「二兵陳俊穎」「中士林崇浩」→ 用子字串比對；含 NAME_ALIASES 變體字）
+function ourNames(){var m={};PEOPLE.forEach(function(p){m[p.id]=[state.names[p.id]];});for(var k in NAME_ALIASES){if(m[NAME_ALIASES[k]])m[NAME_ALIASES[k]].push(k);}return m;}
+function ourIdsIn(str){str=String(str||"");if(!str)return [];var nm=ourNames(),out=[];PEOPLE.forEach(function(p){var arr=nm[p.id];for(var i=0;i<arr.length;i++){if(arr[i]&&arr[i].length>=2&&str.indexOf(arr[i])>=0){out.push(p.id);break;}}});return out;}
 function parseGongban(text){
   var lines=text.replace(/\r/g,"").split("\n"),section="",sub="AM",fenca=false,duties=[];
+  function nameAhead(idx){var buf="";for(var j=idx+1;j<lines.length&&j<idx+4;j++){var nl=lines[j];if(!nl.trim()||nl.indexOf("🔷")>=0||nl.indexOf("🔵")>=0||/[：:]/.test(nl))break;buf+=" "+nl;}return buf;}   // 名字寫在標籤下一行的情形
   var meta=lines.map(function(raw,idx){
     var line=raw,t=line.trim();
     if(line.indexOf("🔷")>=0||line.indexOf("🔵")>=0){fenca=false;section=line.indexOf("公差")>=0?"gongcha":line.indexOf("打飯")>=0?"meal":"clean";if(/上午/.test(t))sub="AM";else if(/下午/.test(t))sub="AFT";else if(/(晚間|晚上|晚)/.test(t))sub="PM";else if(/(中午|午)/.test(t))sub="NOON";return {type:"static",text:raw};}
     var sc=splitColon(line);
-    if(!sc){if(/上午/.test(t))sub="AM";else if(/下午/.test(t))sub="AFT";else if(/(晚間|晚上|晚)/.test(t))sub="PM";else if(/(中午|午)/.test(t))sub="NOON";return {type:"static",text:raw};}
+    if(!sc){var tmm=t.match(/^(\d{3,4})(?!\d)/);if(tmm){var hh=parseInt(tmm[1].length===3?tmm[1].slice(0,1):tmm[1].slice(0,2),10);sub=hh<11?"AM":hh<13?"NOON":hh<17?"AFT":"PM";}else if(/上午/.test(t))sub="AM";else if(/下午/.test(t))sub="AFT";else if(/(晚間|晚上|晚)/.test(t))sub="PM";else if(/(中午|午)/.test(t))sub="NOON";return {type:"static",text:raw};}   // 無冒號的時間標記行（如「2100打掃」）依時間切時段
     var rawLabel=stripNum(sc.label);if(!rawLabel)return {type:"static",text:raw};
     var lc=leadingCount(sc.label);   // 班長把人數寫在最前面（如 3營部馬路）
     var et=extractTime(rawLabel),disp=et.rest||rawLabel,time=et.time;
@@ -376,11 +380,13 @@ function parseGongban(text){
     disp=disp.replace(/^[🔷🔵🚨🔺🔸🔹⬇️➡️]+\s*/,"").replace(/[（(][^）)]*[）)]/g,"").replace(/[\*＊]\s*\d+\s*員?/g,"").trim();
     if(!disp)return {type:"static",text:raw};
     var period=section==="gongcha"?"GC":sub;
+    var mine=ourIdsIn(sc.rhs);if(!mine.length)mine=ourIdsIn(nameAhead(idx));   // 公版已填我們班的名字→自動填上
     var mm=disp.match(/(早打|午打|晚打)/)||rawLabel.match(/(早打|午打|晚打)/);
-    if(mm){var per=mm[1]==="早打"?"AM":mm[1]==="午打"?"NOON":"PM";var mc=sc.rhs.match(/^\s*(\d+)/);var mcount=mc?parseInt(mc[1],10):1;var dm={id:"d"+idx,kind:"meal",mode:"append",label:disp,time:null,period:per,block:per,count:mcount||1,assigned:[],keepAll:false,removed:false,original:raw,extra:null,schedTime:"",timeSrc:""};duties.push(dm);return {type:"duty",dutyId:dm.id};}
+    if(mm){var per=mm[1]==="早打"?"AM":mm[1]==="午打"?"NOON":"PM";var mc=sc.rhs.match(/^\s*(\d+)/);var mcount=mc?parseInt(mc[1],10):1;var dm={id:"d"+idx,kind:"meal",mode:"append",label:disp,time:null,period:per,block:per,count:(mine.length||mcount||1),assigned:mine.slice(),keepAll:false,removed:false,original:raw,extra:null,schedTime:"",timeSrc:"",prefilled:!!mine.length};duties.push(dm);return {type:"duty",dutyId:dm.id};}
     if(/分菜/.test(disp)){fenca=true;var dh={id:"d"+idx,kind:"fill",mode:"append",label:disp,time:null,period:"GC",block:null,count:1,assigned:[],keepAll:false,removed:false,original:raw,extra:null,schedTime:"",timeSrc:"",fenca:"head"};duties.push(dh);return {type:"duty",dutyId:dh.id};}
-    if(fenca){var fm=disp.match(/^(早餐|中餐|晚餐|早|中|晚)$/);if(fm){var fs=/早/.test(fm[1])?"AM":/中/.test(fm[1])?"NOON":"PM";var df={id:"d"+idx,kind:"fill",mode:"append",label:"分菜"+(fs==="AM"?"早":fs==="NOON"?"中":"晚"),time:null,period:"GC",block:null,count:1,assigned:[],keepAll:false,removed:false,original:raw,extra:null,schedTime:"",timeSrc:"",fenca:fs};duties.push(df);return {type:"duty",dutyId:df.id};}else{fenca=false;}}
+    if(fenca){var fm=disp.match(/^(早餐|中餐|晚餐|早|中|晚)$/);if(fm){var fs=/早/.test(fm[1])?"AM":/中/.test(fm[1])?"NOON":"PM";var df={id:"d"+idx,kind:"fill",mode:"append",label:"分菜"+(fs==="AM"?"早":fs==="NOON"?"中":"晚"),time:null,period:"GC",block:null,count:(mine.length||1),assigned:mine.slice(),keepAll:false,removed:false,original:raw,extra:null,schedTime:"",timeSrc:"",fenca:fs,prefilled:!!mine.length};duties.push(df);return {type:"duty",dutyId:df.id};}else{fenca=false;}}
     var blk=time?timeBlock(time):(period==="GC"?null:period);
+    if(mine.length){var dn={id:"d"+idx,kind:"fill",mode:"append",label:disp,time:time,period:period,block:blk,count:mine.length,assigned:mine.slice(),keepAll:false,removed:false,original:raw,extra:(isAlert?"small":null),schedTime:(time||""),timeSrc:"",prefilled:true};duties.push(dn);return {type:"duty",dutyId:dn.id};}   // 公版已填我們班名字→直接填，不用 261
     var toks=sc.rhs.split(/[+、,，]/).map(function(x){return x.trim();}),tok261=null,cnt=1;
     for(var i=0;i<toks.length;i++){var c=count261Token(toks[i]);if(c>0){tok261=toks[i];cnt=c;break;}}
     if(tok261){var d1={id:"d"+idx,kind:"fill",mode:"replace",label:disp,time:time,period:period,block:blk,count:(cnt>1?cnt:(lc||cnt)),assigned:[],keepAll:false,removed:false,original:raw,tok261:tok261,extra:(isAlert?"small":null),schedTime:(time||""),timeSrc:""};duties.push(d1);return {type:"duty",dutyId:d1.id};}
@@ -420,6 +426,7 @@ function fillAppend(d){
 function rebuildLine(m){
   if(m.type==="static")return m.text;
   var d=dutyById(m.dutyId);if(!d)return "";
+  if(d.prefilled)return d.removed?"":d.original;   // 公版本來就填好名字→原樣輸出，不再重複附加
   return d.mode==="replace"?fillReplace(d):fillAppend(d);
 }
 function buildFilled(){
@@ -498,7 +505,7 @@ function parseGuard(text){
       var code=sm[1],st=parseInt(code.slice(0,2),10);
       // 只有 22:00–23:59 起的班（如 2224）在午夜前＝第一天；24:00 以後與白天（0–21、24）都算第二天
       var toD2=!(st>=22&&st<24);
-      var sh={id:"g"+(si++),code:code,loc:sm[2]||"",assigned:[],date:(toD2?curDay.date2:curDay.date)};
+      var sh={id:"g"+(si++),code:code,loc:sm[2]||"",assigned:ourIdsIn(t.slice(sm[0].length)),date:(toD2?curDay.date2:curDay.date)};   // 衛哨表已寫名字（如「二兵陳俊穎」）→ 自動填上站哨的人
       curDay.shifts.push(sh);meta.push({type:"shift",shiftId:sh.id});return;
     }
     meta.push({type:"static",text:raw});
@@ -608,7 +615,7 @@ function autoAssign(){
   refreshHist();
   // 1) 打飯：輪流隊列，補休者保留順位、回來先輪到
   var q=state.mealQueue.slice();
-  var meals=state.duties.filter(function(d){return d.kind==="meal"&&!d.removed;}).sort(function(a,b){return pord(a.period)-pord(b.period);});
+  var meals=state.duties.filter(function(d){return d.kind==="meal"&&!d.removed&&!d.prefilled;}).sort(function(a,b){return pord(a.period)-pord(b.period);});   // 公版已填好的（prefilled）不被自動分配蓋掉
   meals.forEach(function(m){
     var need=m.count||1;m.assigned=[];
     for(var c=0;c<need;c++){
@@ -630,7 +637,7 @@ function autoAssign(){
   state.duties.forEach(function(d){if(d.kind==="meal"||d.removed||d.keepAll)return;d.assigned.forEach(function(pid){catWork[d.label]=catWork[d.label]||{};catWork[d.label][pid]=cw(d.label,pid)+1;});});
   var avail=PEOPLE.filter(function(p){return state.available[p.id];}),short=false;
   state.duties.forEach(function(d){
-    if(d.kind==="meal"||d.removed||d.keepAll)return;
+    if(d.kind==="meal"||d.removed||d.keepAll||d.prefilled)return;
     var b=blockOf(d),cat=d.label,need=d.count-d.assigned.length;
     for(var i=0;i<need;i++){
       var cand=avail.filter(function(p){if(d.assigned.indexOf(p.id)>=0)return false;if(b&&pset[b][p.id])return false;if(restBlock(p.id,d))return false;if(implBlk(p.id,d))return false;return true;});
@@ -1119,21 +1126,24 @@ function closeSheet(){var wasTl=state.sheet&&state.sheet.type==="tlblock"&&!stat
 /* ---------- 行動準則 / 行程 ---------- */
 function toMin(t){t=(t||"").replace(/[^0-9]/g,"");if(t.length<3)return null;t=t.slice(0,4);while(t.length<4)t="0"+t;var h=parseInt(t.slice(0,2),10),m=parseInt(t.slice(2,4),10);if(isNaN(h)||isNaN(m))return null;return h*60+m;}
 function hmFmt(t){t=(t||"").replace(/[^0-9]/g,"").slice(0,4);if(t.length<4)return (t||"");var hh=t.slice(0,2);return (hh==="24"?"00":hh)+":"+t.slice(2,4);}
+// \u53bb\u6389\u958b\u982d\u7684\u300c\u689d\u5217\u7b26\u865f\u300d\uff1a1\ufe0f\u20e3 \u2460..\u2473 \u2776..\u277f 1. 2\u3001 3) \u25aa \u2022 \u2023 \ud83d\udd39\ud83d\udd3a\ud83d\udd38\ud83d\udd37\ud83d\udd35\ud83d\udcf7\ud83e\ude96\u2705\u2b07\u27a1 \u7b49\u3002\u56de\u50b3 {bul:\u662f\u5426\u70ba\u689d\u5217, txt:\u53bb\u7b26\u865f\u5f8c\u6587\u5b57}
+var SCHED_BULLET=/^\s*(?:[0-9\uff10-\uff19]\ufe0f?\u20e3|[\u2460-\u2473\u2776-\u277f\u24ea]|\d{1,2}\s*[.\u3001)]|[\u25aa\u25ab\u25e6\u2022\u2023\u2043]|[\ud83c-\ud83e][\udc00-\udfff]\ufe0f?|[\u2705\u2b07\u27a1]\ufe0f?)\s*/;
+function schedBullet(s){s=String(s||"");var bul=SCHED_BULLET.test(s);return {bul:bul,txt:s.replace(SCHED_BULLET,"").replace(/\uFFFD/g,"").trim()};}
 function parseSched(text){
   var lines=text.replace(/\r/g,"").split("\n"),items=[],title="",cur=null;
   lines.forEach(function(raw){
     var t=raw.trim();if(!t)return;
     var m=t.match(/^(\d{3,4}\s*[-~\u301c\uff5e]\s*\d{3,4}|\d{3,4})\s*(.*)$/);
     if(m){
-      var range=m[1].replace(/\s/g,""),rest=(m[2]||"").replace(/^[\ud83d\udd39\ud83d\udd3a\ud83d\udd38\ud83d\udd37\ud83d\udd35]\s*/,"").replace(/\uFFFD/g,"").trim();
+      var range=m[1].replace(/\s/g,""),rest=schedBullet(m[2]||"").txt;
       cur={id:"s"+items.length,time:range.replace(/[^0-9]/g,"").slice(0,4),range:range,text:rest,min:toMin(range)};
       items.push(cur);return;
     }
     if(/\u884c\u52d5\u6e96\u64da|\u884c\u52d5\u6e96\u5247/.test(t)){if(!title)title=t;return;}
-    var clean=t.replace(/^[\ud83d\udd39\ud83d\udd3a\ud83d\udd38\ud83d\udd37\ud83d\udd35]\s*/,"").replace(/\uFFFD/g,"").trim();
-    if(cur&&!cur.text){cur.text=clean;}
-    else if(cur&&/^[\ud83d\udd39\ud83d\udd3a\ud83d\udd38]/.test(t)){cur.text=cur.text+(cur.text?" \u00b7 ":"")+clean;}
-    else{items.push({id:"s"+items.length,time:"",range:"",text:clean,min:null});cur=null;}
+    var b=schedBullet(t);
+    if(cur&&!cur.text){cur.text=b.txt;}                          // \u6642\u9593\u9ede\u4e0b\u7684\u7b2c\u4e00\u4ef6\u4e8b\uff08\u53ef\u80fd\u6709 1\ufe0f\u20e3 \u524d\u7db4\uff0c\u53bb\u6389\uff09
+    else if(cur&&b.bul){cur.text=cur.text+(cur.text?" \u00b7 ":"")+b.txt;}   // \u540c\u4e00\u6642\u9593\u9ede\u7684\u591a\u4ef6\u4e8b\uff082\ufe0f\u20e33\ufe0f\u20e3\ud83d\udcf7\ud83e\ude96\u2026\uff09\u5408\u4f75
+    else{items.push({id:"s"+items.length,time:"",range:"",text:b.txt,min:null});cur=null;}
   });
   return {items:items,title:title};
 }
@@ -1146,7 +1156,8 @@ function effectiveTimed(){return effectiveSchedule().filter(function(it){return 
 function defaultTimeFor(d){
   if(d.kind==="meal")return d.period==="AM"?"0600":d.period==="NOON"?"1100":"1700";
   if(d.fenca&&d.fenca!=="head")return d.fenca==="AM"?"0430-0630":d.fenca==="NOON"?"0830-1130":"1500-1730";
-  if(d.period==="AM"&&/(\u8d70\u5eca|\u99ac\u8def|\u6d74\u5ec1|\u51b0\u6876|\u6c34\u6876|\u5783\u573e|\u6383)/.test(d.label))return "0630-0740";
+  if(/\u6d74\u5ec1/.test(d.label)||((d.period==="PM"||d.period==="AFT")&&/(\u6383|\u5ec1)/.test(d.label)))return "2100-2120";   // \u665a\u4e0a\u6253\u6383\uff08\u6d74\u5ec1\uff09
+  if(d.period==="AM"&&/(\u8d70\u5eca|\u99ac\u8def|\u51b0\u6876|\u6c34\u6876|\u5783\u573e|\u6383)/.test(d.label))return "0630-0740";
   return "";
 }
 function mealWindow(period){return period==="AM"?[0,600]:period==="NOON"?[600,900]:[900,1440];}
