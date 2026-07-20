@@ -124,4 +124,39 @@
 - 一律先讀 v4＋v6＋本檔＋現有 `index.html` 再動；改完先 `node --check` 再功能測。
 - 動同步／資料安全 → v4 第七節＋本檔第一、七節。
 - 回應提醒：上傳覆蓋 GitHub、`?v=N` 避快取；雲端／複製部署後 https 測。**`.gs` 這版沒改，不用重新部署。**
-- 目前 **index.html ≈ v36、Apps Script v3（分片，未動）**。
+- 目前 **index.html ≈ v37、Apps Script v3（分片，未動）**。
+
+---
+
+## 十一、站哨跨夜時間解析修復（v7 之後追加，這批很重要）
+
+站哨 `code` 是 4 碼「起訖時」字串。**24 進位**：`2402` = 該日隔天 `00:00–02:00`（不是 24:02），`2224` = `22:00–24:00`。站哨頁本來就對（`shiftHM` 有把 24→00），但**行程／分工／補休**過去會錯，這批修好了：
+
+### 核心觀念
+- **一律用 `shiftStartHH(code)`（起始時，24→0）判斷**，不要再直接 `parseInt(code.slice(0,2))`。
+- `guardRange(code)`：起始 `24`→`00`（`2402→0000-0200`、`2224→2200-2400`），是「同一天內的分鐘範圍」。之前沒轉 24→00，害 `2402` 變成 `2400-0200`（min=1440）被排到**最下面**——這就是使用者看到「2402 跑到底部、被當成 7/21 的 24:02」的根因。
+- 所有 `min:toMin(sh.code.slice(0,2)+"00")` 改成 `min:shiftStartMin(sh.code)`（`2402→0`，排最上）。三處：`livePlan / planFromImport / guardEventsFor`。
+
+### 夜哨補休（第二個 bug）
+- 夜哨 = 起始時 22/00/02/04（`2224 / 2402 / 0204 / 0406` 四班），補休都在**早上那天** `0550-0740`：
+  - `2224`（起 22，屬 day1）→ 補休掛**隔天**（day1+1）。
+  - `2402 / 0204 / 0406`（屬 day2）→ 補休掛**當天**（day2）。
+- 一律走新 helper **`guardRestInfo(sh)`** →`{kind,date,def}`。`impliedRestsFrom` 的站哨迴圈改用它（不再 `sh0<6` 那種會漏掉 22/24 的寫法），`tl-restedit`（時間軸點補休調時間）也改用它判 kind/def。
+- 效果：`7/20-7/21` 的四班夜哨，補休全部正確落在 **7/21 0550-0740**；`impliedRestsFrom(_,7/20)` 不再產生夜哨補休。
+
+### 跨夜哨兩天都寫（第三點需求）
+- 新 helper **`guardCarryEvents(md)`**：`22xx`（前晚，屬 day1）→ 補畫到**隔天最上面**（`pin:"top"`, `min:-1`）；`24xx/00xx`（凌晨，屬 day2）→ 補畫到**前一天最下面**（`pin:"bottom"`, `min:1441`）。label 帶「（跨夜）」。
+- 掛進三個地方（display-only，**不進 `tlFreeAt`/`autoAssign` 的卡到判斷**，所以排人衝突邏輯不受影響）：
+  1. `livePlan`（給大家的分工 copy）＋ `planForBoard` 主分支 → `plan.events` 多 carry 事件。
+  2. 行程 A/B（列表）＋ 分工：靠 `min`(-1/1441) 自然排到頂/底。
+  3. 行程 C `modeC`（時段表）：carry 事件**不進 anchors**，畫時依 `pin` 釘在 `ax.lo`/`ax.hi`（虛線、標「跨哨」）。
+  4. 排班時間軸 `boardTimeline`：carry 不畫進格子，改成卡片外一條「跨夜哨 ↑前晚／↓明晨」pill 標示列（`tlBoardData` 回傳 `carry`）。
+- `personDayItems` 多帶 `carry/pin` 旗標給 `modeC` 用。
+
+### ⚠️ 沿用的限制
+- carry / 夜哨補休都只看 **active 站哨週**（`state.guard`）。行程看某天時，若那天的站哨在非 active 週，不會帶出（同 v7 第一節的已知限制）。
+- `guardShiftById`（`tl-restedit` 調 guard 補休用）只找 active 週；carry 是別週來的話點不進去（carry 目前也沒做成可點）。
+
+### 測試
+- `/tmp/h3.js`（**35 項**）：日期歸屬（2224→7/20、2402/0204/0406→7/21）、`guardRange/shiftStartMin/shiftHM`、`guardEventsFor(7/21)` 的 2402 min=0、`impliedRestsFrom` 四班夜哨→7/21 0550-0740 且 7/20 無、`guardCarryEvents` 兩天 pin top/bottom、`planForBoard` 含 carry、`buildPersonList` 不含 2400/24:00。
+- 連同 v7 的 h.js(23)+h2.js(30) 共 **88 項全過**；另用 Chromium 截 4 圖（7/21 當天流程／八人時段表、7/20 當天流程、7/21 排班時間軸）人工確認 2402 在頂、四班補休在 7/21、跨夜兩天都有。
