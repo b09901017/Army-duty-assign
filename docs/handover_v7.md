@@ -124,4 +124,66 @@
 - 一律先讀 v4＋v6＋本檔＋現有 `index.html` 再動；改完先 `node --check` 再功能測。
 - 動同步／資料安全 → v4 第七節＋本檔第一、七節。
 - 回應提醒：上傳覆蓋 GitHub、`?v=N` 避快取；雲端／複製部署後 https 測。**`.gs` 這版沒改，不用重新部署。**
-- 目前 **index.html ≈ v36、Apps Script v3（分片，未動）**。
+- 目前 **index.html ≈ v38、Apps Script v3（分片，未動）**。
+
+---
+
+## 十一、站哨跨夜時間解析修復（v7 之後追加，這批很重要）
+
+站哨 `code` 是 4 碼「起訖時」字串。**24 進位**：`2402` = 該日隔天 `00:00–02:00`（不是 24:02），`2224` = `22:00–24:00`。站哨頁本來就對（`shiftHM` 有把 24→00），但**行程／分工／補休**過去會錯，這批修好了：
+
+### 核心觀念
+- **一律用 `shiftStartHH(code)`（起始時，24→0）判斷**，不要再直接 `parseInt(code.slice(0,2))`。
+- `guardRange(code)`：起始 `24`→`00`（`2402→0000-0200`、`2224→2200-2400`），是「同一天內的分鐘範圍」。之前沒轉 24→00，害 `2402` 變成 `2400-0200`（min=1440）被排到**最下面**——這就是使用者看到「2402 跑到底部、被當成 7/21 的 24:02」的根因。
+- 所有 `min:toMin(sh.code.slice(0,2)+"00")` 改成 `min:shiftStartMin(sh.code)`（`2402→0`，排最上）。三處：`livePlan / planFromImport / guardEventsFor`。
+
+### 夜哨補休（第二個 bug）
+- 夜哨 = 起始時 22/00/02/04（`2224 / 2402 / 0204 / 0406` 四班），補休都在**早上那天** `0550-0740`：
+  - `2224`（起 22，屬 day1）→ 補休掛**隔天**（day1+1）。
+  - `2402 / 0204 / 0406`（屬 day2）→ 補休掛**當天**（day2）。
+- 一律走新 helper **`guardRestInfo(sh)`** →`{kind,date,def}`。`impliedRestsFrom` 的站哨迴圈改用它（不再 `sh0<6` 那種會漏掉 22/24 的寫法），`tl-restedit`（時間軸點補休調時間）也改用它判 kind/def。
+- 效果：`7/20-7/21` 的四班夜哨，補休全部正確落在 **7/21 0550-0740**；`impliedRestsFrom(_,7/20)` 不再產生夜哨補休。
+
+### 跨夜哨兩天都寫（第三點需求）
+- 新 helper **`guardCarryEvents(md)`**：`22xx`（前晚，屬 day1）→ 補畫到**隔天最上面**（`pin:"top"`, `min:-1`）；`24xx/00xx`（凌晨，屬 day2）→ 補畫到**前一天最下面**（`pin:"bottom"`, `min:1441`）。label 帶「（跨夜）」。
+- 掛進三個地方（display-only，**不進 `tlFreeAt`/`autoAssign` 的卡到判斷**，所以排人衝突邏輯不受影響）：
+  1. `livePlan`（給大家的分工 copy）＋ `planForBoard` 主分支 → `plan.events` 多 carry 事件。
+  2. 行程 A/B（列表）＋ 分工：靠 `min`(-1/1441) 自然排到頂/底。
+  3. 行程 C `modeC`（時段表）：carry 事件**不進 anchors**，畫時依 `pin` 釘在 `ax.lo`/`ax.hi`（虛線、標「跨哨」）。
+  4. 排班時間軸 `boardTimeline`：carry 不畫進格子，改成卡片外一條「跨夜哨 ↑前晚／↓明晨」pill 標示列（`tlBoardData` 回傳 `carry`）。
+- `personDayItems` 多帶 `carry/pin` 旗標給 `modeC` 用。
+
+### ⚠️ 沿用的限制
+- carry / 夜哨補休都只看 **active 站哨週**（`state.guard`）。行程看某天時，若那天的站哨在非 active 週，不會帶出（同 v7 第一節的已知限制）。
+- `guardShiftById`（`tl-restedit` 調 guard 補休用）只找 active 週；carry 是別週來的話點不進去（carry 目前也沒做成可點）。
+
+### 測試
+- `/tmp/h3.js`（**35 項**）：日期歸屬（2224→7/20、2402/0204/0406→7/21）、`guardRange/shiftStartMin/shiftHM`、`guardEventsFor(7/21)` 的 2402 min=0、`impliedRestsFrom` 四班夜哨→7/21 0550-0740 且 7/20 無、`guardCarryEvents` 兩天 pin top/bottom、`planForBoard` 含 carry、`buildPersonList` 不含 2400/24:00。
+- 連同 v7 的 h.js(23)+h2.js(30) 共 **88 項全過**；另用 Chromium 截 4 圖（7/21 當天流程／八人時段表、7/20 當天流程、7/21 排班時間軸）人工確認 2402 在頂、四班補休在 7/21、跨夜兩天都有。
+
+---
+
+## 十二、解析自動填我班名字 ＋ 行動準據多件事解析（v7 之後再追加）
+
+### 公版有我班名字→自動填上（`ourIdsIn` + `prefilled`）
+- 新 helper **`ourIdsIn(str)`**：用**子字串比對**認出我班 8 人（`ourNames()`＝`state.names`＋`NAME_ALIASES`）。子字串比對是為了吃掉前綴，如「二兵陳俊穎」「中士林崇浩」都認得出來（比對整個 3 字名）。
+- `parseGongban`：每個勤務行先 `mine=ourIdsIn(sc.rhs)`（沒有再看下一行 `nameAhead(idx)`）。有找到→建一筆 **`prefilled:true`** 的勤務，`assigned=mine`、`count=mine.length`。打飯／分菜分支也一樣。名字優先於 261（有名字就不用 261 placeholder）。
+- `parseGuard`：站哨行 `code (loc)` 後面的名字（如「2224 戰 二兵陳俊穎」）也用 `ourIdsIn` 自動填 `sh.assigned`。→ 夜哨補休、行程站哨名字全部自動帶出。
+- **`prefilled` 的下游處理**：
+  - `rebuildLine`：`prefilled` 直接回 `d.original`（公版本來就填好名字，別再 append 一次→避免重複）。所以「複製填好的公版」對已填公版＝原樣吐回，正確。
+  - `autoAssign`：跳過 `prefilled`（打飯 meals 過濾 `!d.prefilled`、一般勤務迴圈 `||d.prefilled` return）→ 班長已排的不會被自動分配蓋掉；但 `prefilled` 的人**仍計入 work/pset 負載**（均分別項時會考慮）。
+- 效果：貼班長已填名字的公版→我班的人直接排好，行程／排班時間軸／午打補休即時同步（planForBoard 對 active 日用 live `state.duties`，不用 commit 就更新）。統計仍要按「計入統計」。
+
+### 行動準據多件事（`parseSched` + `SCHED_BULLET`）
+- 舊 bug：`0550` 下面 `1️⃣車勤`／`2️⃣將軍道前升旗` 只讀到第一件，第二件變成獨立「未標時間」項。
+- 新 `SCHED_BULLET` regex 認條列符號：`1️⃣`（keycap）、`①..⑳ ❶..❿`、`1. 2、 3)`、`▪ •`、任意 emoji（`🔹🔺🔸📷🪖✅…` 用 surrogate range `[\ud83c-\ud83e][\udc00-\udfff]`）。`schedBullet(s)`→`{bul,txt}`。
+- `parseSched`：時間點下**第一件**事設 `cur.text`（去符號）；後面**帶條列符號**的再 append（`cur.text + " · " + txt`）＝同一時間多件事合併。非條列的接續行維持舊行為（另開未標時間項，例如「戰 3箱／火 12箱」那種清單不硬併）。
+- 效果：`0550`＝「車勤 · 將軍道前升旗（下雨取消）」；`0800`（獨立時間行）＝「連主檢 · 261T民防餐廳就位 · 操課紀實：… · 餐廳管制：…」；`1720`＝「部隊用餐 · 查哨勤前」。
+
+### 連帶修：晚上打掃（浴廁）時段
+- `parseGongban`：無冒號的時間標記行（如「2100打掃」）現在**依開頭時間切 sub 時段**（`hh<11 AM / <13 NOON / <17 AFT / 其餘 PM`），所以其下的浴廁勤務 period＝PM（清單歸「晚」、不再跟早上走廊撞成卡到）。
+- `defaultTimeFor`：`浴廁`／晚間打掃回 **`2100-2120`**（原本只有 AM 打掃回 0630-0740，害浴廁被排到早上）。行程／時間軸現在把浴廁畫在 21:00。
+
+### 測試
+- `/tmp/h4.js`（**34 項**，用**使用者真實的 7/20、7/21 公版＋準據＋衛哨**）：`parseSched` 的 0550/0800/1720 多件事；`parseGongban` 各勤務自動填對的我班 id（營部走廊→5、連部浴廁→1,4、午打→4,5,6…）＋`prefilled`；午打自動補休 people＝午打的人；`parseGuard` 站哨名字（2224→6、2402→1）＋日期＋夜哨補休掛對天。
+- 全套 h.js(23)+h2(30)+h3(35)+h4(34)＝**122 項全過**；另用 Chromium **實際把三段貼進 App 解析**截圖（排班清單 14 項全填名、排班時間軸、行程當天流程／八人分工）人工確認：名字全填、午打補休、0550 兩件事、浴廁在 21:00。
