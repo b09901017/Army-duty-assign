@@ -79,7 +79,9 @@ function dutyGroup(d){if(d.extra==="big")return "大公差";if(d.extra==="small"
 function catColor(cat){var g=(typeof HIST!=="undefined"&&HIST.cg&&HIST.cg[cat])||deriveGroup(cat);return GCOLORS[g]||"#888";}
 function sum(o){var s=0;for(var k in o)s+=o[k];return s;}
 function todayLabel(){var d=new Date();return (d.getMonth()+1)+"/"+d.getDate();}
-function curDate(){return extractDate(state.gongban.raw)||(state.schedule&&state.schedule.date)||todayLabel();}
+// 目前這天：以 state.activeDate（點開／解析的那天）為準。雲端不傳原文 raw，別台 pull 下來 gongban.raw 是空的，
+// 舊寫法會退回 schedule.date（可能是重貼的別天準則）→ 整個排班頁誤判成別天。所以一律先信 activeDate。
+function curDate(){return state.activeDate||extractDate(state.gongban.raw)||(state.schedule&&state.schedule.date)||todayLabel();}
 function dnum(md){var m=(md||"").match(/(\d{1,2})\/(\d{1,2})/);return m?parseInt(m[1],10)*100+parseInt(m[2],10):0;}
 function mdToDate(md){var m=(md||"").match(/(\d{1,2})\/(\d{1,2})/);if(!m)return null;return new Date(new Date().getFullYear(),parseInt(m[1],10)-1,parseInt(m[2],10));}
 function dateToMD(d){return (d.getMonth()+1)+"/"+d.getDate();}
@@ -261,7 +263,7 @@ function pushNow(){
   if(state.readOnly){flash("唯讀模式無法上傳");return;}
   if(!state.syncUrl){flash("尚未連線雲端");return;}
   if(!pulledOk){flash("還沒讀到雲端資料，先同步一次再上傳");pendingPush=true;pullSync();return;}
-  saveBoard();
+  saveBoard();saveGuardWeek();   // 存住目前正在編的排班板＋站哨週，按一下就把「該有的」全部備份上去
   var body=payload(),n=Object.keys(state.boards).length;
   flash("上傳中…（"+n+" 天排班板）");
   lastPushAt=Date.now();
@@ -1186,7 +1188,7 @@ function autoTagTimes(){
 function planGroup(d){return (d.fenca&&d.fenca!=="head")?"\u5206\u83dc":d.extra==="big"?"\u5927\u516c\u5dee":d.extra==="small"?"\u5c0f\u516c\u5dee":d.kind==="meal"?"\u6253\u98ef":d.period==="GC"?"\u516c\u5dee":"\u6253\u6383";}
 function livePlan(){
   var raw=state.gongban.raw||(state.schedule?state.schedule.raw:"")||"";
-  var date=extractDate(state.gongban.raw)||(state.schedule&&state.schedule.date)||todayLabel();
+  var date=state.activeDate||extractDate(state.gongban.raw)||(state.schedule&&state.schedule.date)||todayLabel();   // 同 curDate：先信 activeDate，別讓雲端沒 raw 時退回別天準則
   var wm=raw.match(/[\uff08(]([\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u65e5])[)\uff09]/);
   var events=[];
   state.duties.forEach(function(d){
@@ -1720,7 +1722,7 @@ function handle(a,el){
   else if(a==="board-mode"){state.boardMode=(state.boardMode==="view")?"edit":"view";render();}
   else if(a==="sparse"){var st=(state.schedPaste||"").trim();if(!st){flash("先把行動準則貼進來");return;}var sr=parseSched(state.schedPaste);if(!sr.items.length){flash("沒抓到時間，確認格式");return;}var sdate=extractDate(state.schedPaste)||"";
     var mismatch=(sdate&&state.activeDate&&normMD(sdate)!==normMD(state.activeDate));
-    state.schedule={raw:state.schedPaste,items:sr.items,title:sr.title,loaded:true,date:sdate};autoTagTimes();persistLocal();
+    state.schedule={raw:state.schedPaste,items:sr.items,title:sr.title,loaded:true,date:sdate};autoTagTimes();persist();   // 貼準則也要自動上傳，否則只有本機看得到（原本 persistLocal 不 push）
     flash(mismatch?("⚠️ 準則是 "+sdate+"、公版是 "+state.activeDate+"，不同天！確認是否貼錯"):"已解析準則，並幫對得上的勤務標了時間");render();}
   else if(a==="srepaste"){state.showSchedPaste=true;state.schedPaste=state.schedule.raw;focusEl="spaste";render();}
   else if(a==="avail"){var aid=parseInt(id,10),cd=curDate();if(absenceRec(aid,cd))clearAbsent(aid,cd);else setAbsent(aid,cd,{reason:"其他",until:""});syncAvail();persist();render();}
