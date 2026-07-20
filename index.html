@@ -157,7 +157,7 @@ var state={
   evtForm:{id:null,md:"",label:"",range:"",group:"公差",people:[],keepAll:false},
   boards:(saved&&saved.boards)?saved.boards:{},
   activeDate:(saved&&saved.activeDate)?saved.activeDate:"",
-  boardMode:"edit",boardOpen:false,
+  boardMode:"edit",boardOpen:false,boardView:"list",tlFree:null,
   readOnly:!checkUnlock()
 };
 (function(){var d=state.activeDate,b=d&&state.boards[d];if(b&&b.duties){state.gongban={raw:b.raw,meta:b.meta,loaded:true};state.duties=b.duties;if(b.schedule&&b.schedule.items)state.schedule=b.schedule;}else{state.activeDate="";}})();
@@ -922,7 +922,7 @@ var overlay=document.getElementById("overlay");
 var pickAdv=false,psOpen={},pickConfirm=null;
 function handleBar(){return '<div data-drag="1" style="padding:9px 0 11px;cursor:grab;touch-action:none;"><div style="width:40px;height:4px;border-radius:2px;background:'+C.line+';margin:0 auto;"></div></div>';}
 function xBtn(){return '<button class="btn" data-action="close-sheet" style="width:30px;height:30px;border-radius:8px;border:none;background:'+C.bg+';color:'+C.sub+';display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+icon("x",16)+'</button>';}
-function currentDuty(){return (state.sheet&&state.sheet.type==="picker")?dutyById(state.sheet.id):null;}
+function currentDuty(){return (state.sheet&&(state.sheet.type==="picker"||state.sheet.type==="tlblock"))?dutyById(state.sheet.id):null;}
 function pickerInner(d){
   var occ=occupiesFor(d),B=blockOf(d),over=!d.keepAll&&d.assigned.length>d.count;
   var ctrl="";
@@ -1027,7 +1027,7 @@ function dayevtInner(){
   var save='<div style="display:flex;gap:8px;margin-top:16px;">'+delBtn+'<button class="btn" data-action="dayevt-save" style="flex:1;padding:13px;border-radius:12px;border:none;background:'+C.green+';color:#fff;font-weight:800;font-size:15px;">儲存</button></div>';
   return head+'<div class="sheet-list" style="max-height:60vh;overflow-y:auto;">'+labIn+timeIn+'<div style="font-size:12px;font-weight:700;color:'+C.sub+';margin-top:13px;">分類</div>'+gseg+peopleSec+'</div>'+save;
 }
-function sheetInner(){var s=state.sheet;if(!s)return "";if(s.type==="picker"){var d=dutyById(s.id);return d?pickerInner(d):"";}if(s.type==="person")return personInner(s.id);if(s.type==="guard")return guardInner(s.id);if(s.type==="absence")return absenceInner();if(s.type==="dayevt")return dayevtInner();return "";}
+function sheetInner(){var s=state.sheet;if(!s)return "";if(s.type==="picker"){var d=dutyById(s.id);return d?pickerInner(d):"";}if(s.type==="person")return personInner(s.id);if(s.type==="guard")return guardInner(s.id);if(s.type==="absence")return absenceInner();if(s.type==="dayevt")return dayevtInner();if(s.type==="tlblock"){var dt=dutyById(s.id);return dt?tlBlockInner(dt):"";}if(s.type==="tlfree")return tlFreeInner();return "";}
 function attachDrag(el){
   var handle=el.querySelector('[data-drag]');if(!handle)return;var startY=0,dragging=false;
   handle.onpointerdown=function(e){dragging=true;startY=e.clientY;el.style.transition="none";try{handle.setPointerCapture(e.pointerId);}catch(_){}};
@@ -1037,7 +1037,7 @@ function attachDrag(el){
 }
 function openSheet(type,id){state.sheet={type:type,id:id};pickAdv=false;pickConfirm=null;if(type==="person")psOpen={};refreshHist();overlay.innerHTML='<div class="backdrop" data-action="close-sheet"><div class="sheet" data-action="noop">'+sheetInner()+'</div></div>';attachDrag(overlay.querySelector('.sheet'));}
 function refreshSheet(){if(!state.sheet){closeSheet();return;}refreshHist();var el=overlay.querySelector('.sheet');if(!el){openSheet(state.sheet.type,state.sheet.id);return;}var lw=el.querySelector('.sheet-list');var sc=lw?lw.scrollTop:0;el.innerHTML=sheetInner();var lw2=el.querySelector('.sheet-list');if(lw2)lw2.scrollTop=sc;attachDrag(el);}
-function closeSheet(){overlay.innerHTML="";state.sheet=null;render();}
+function closeSheet(){var wasTl=state.sheet&&state.sheet.type==="tlblock"&&!state.readOnly&&state.boardMode!=="view";overlay.innerHTML="";state.sheet=null;if(wasTl)persist();render();}
 
 /* ---------- 行動準則 / 行程 ---------- */
 function toMin(t){t=(t||"").replace(/[^0-9]/g,"");if(t.length<3)return null;t=t.slice(0,4);while(t.length<4)t="0"+t;var h=parseInt(t.slice(0,2),10),m=parseInt(t.slice(2,4),10);if(isNaN(h)||isNaN(m))return null;return h*60+m;}
@@ -1202,6 +1202,128 @@ function currentPlan(){
 }
 var GEN_RE=/(\u8d77\u5e8a|\u5347\u65d7|\u96c6\u5408|\u7528\u9910|\u4e0a\u9910\u5ef3|\u83a2\u5149|\u751f\u547d\u6559\u80b2|\u64cd\u8ab2|\u904b\u52d5|\u904b\u52d5\u6703|\u9ede\u540d|\u5c31\u5bdd|\u71c8\u706b|\u6c34\u96fb|\u5de1\u67e5|\u52e4\u524d|\u6536\u64cd|\u9867\u88dd|\u5f85\u547d|\u5c04\u64ca|\u958b\u5eab|\u53d6\u88dd|\u9001\u88dd|\u5b9a\u4fdd|\u5ea7\u8ac7)/;
 function dayGroupColor(g){return GCOLORS[g]||absColor(g);}
+/* ========== 時間軸／甘特（排班頁「時間軸」子檢視 + 行程頁「八人時段表」共用） ========== */
+var TL_DAYEND=1440;
+function tlHM(m){var h=Math.floor(m/60),x=m%60;return (h<10?"0":"")+h+":"+(x<10?"0":"")+x;}
+function occSpan(rangeStr){var sp=spanMin(rangeStr);if(!sp)return null;if(sp[1]<=sp[0])return [sp[0],Math.min(TL_DAYEND,sp[0]+30)];return [sp[0],sp[1]];}   // 佔用時段（判斷卡到）：無→null不佔用、只有點→往後30分、有起訖→自身
+function tlVis(rangeStr){var sp=spanMin(rangeStr);if(!sp)return {s:0,e:TL_DAYEND,solid:false};if(sp[1]<=sp[0])return {s:sp[0],e:TL_DAYEND,solid:false};return {s:sp[0],e:sp[1],solid:true};}   // 畫圖用：無→整天虛、只有點→往下虛到收假、有起訖→實心
+function tlAxis(anchors,nowMin){   // 壓縮空時段：只有事的時段照時長給高度，空白壓成細縫；回傳 y(分鐘)→px
+  var pts={};anchors.forEach(function(a){if(a==null)return;pts[a[0]]=1;pts[a[1]]=1;});if(nowMin!=null)pts[nowMin]=1;
+  var B=Object.keys(pts).map(Number).sort(function(a,b){return a-b;});
+  if(B.length<2)return null;
+  function act(t0,t1){for(var i=0;i<anchors.length;i++){var a=anchors[i];if(a&&a[1]>a[0]&&a[0]<t1&&a[1]>t0)return true;}return false;}
+  var SCALE=0.6,MIN=30,MAX=150,GAP=18,PAD=12,segs=[],px=PAD;
+  for(var i=0;i<B.length-1;i++){var t0=B[i],t1=B[i+1],h=act(t0,t1)?Math.max(MIN,Math.min(MAX,(t1-t0)*SCALE)):GAP;segs.push({t0:t0,t1:t1,a:px,b:px+h});px+=h;}
+  var bottom=px;px+=PAD;
+  function y(m){if(m<=B[0])return PAD;if(m>=B[B.length-1])return bottom;for(var i=0;i<segs.length;i++){var s=segs[i];if(m>=s.t0&&m<=s.t1){var f=s.t1===s.t0?0:(m-s.t0)/(s.t1-s.t0);return s.a+f*(s.b-s.a);}}return bottom;}
+  return {y:y,H:px,B:B,lo:B[0],hi:B[B.length-1]};
+}
+function tlLanes(blocks){   // 重疊分欄：卡到的方塊排到不同欄，一眼看出並排＝時段撞在一起
+  var lanes=[];blocks.slice().sort(function(a,b){return a.s-b.s||a.e-b.e;}).forEach(function(bk){var placed=false;for(var i=0;i<lanes.length;i++){if(lanes[i]<=bk.s){bk.lane=i;lanes[i]=bk.e;placed=true;break;}}if(!placed){bk.lane=lanes.length;lanes.push(bk.e);}});return lanes.length||1;}
+function tlFreeAt(s,e,md,exclId){   // 某時段誰有空：扣掉整天不在、補休時段、站哨、其他已排勤務（真實分鐘重疊）
+  return PEOPLE.map(function(p){
+    var pid=p.id,why="";
+    if(fullDayOut(pid,md))return {pid:pid,free:false,why:(absentReason(pid,md)||"不在")};
+    if(s!=null){
+      absenceRecs(pid,md).forEach(function(r){if(why||!r.range)return;var rr=spanMin(r.range);if(rr&&s<rr[1]&&e>rr[0])why=(r.reason||"補休")+" "+fmtSpan(r.range);});
+      if(!why)(guardEventsFor(md)||[]).forEach(function(g){if(why||g.people.indexOf(pid)<0)return;var gs=spanMin(g.range);if(gs&&s<gs[1]&&e>gs[0])why="站哨 "+fmtSpan(g.range);});
+      if(!why)state.duties.forEach(function(d){if(why||d.id===exclId||d.removed)return;if(!(d.keepAll||d.assigned.indexOf(pid)>=0))return;var oc=occSpan(d.schedTime||d.time||"");if(oc&&s<oc[1]&&e>oc[0])why=d.label;});
+    }
+    return {pid:pid,free:!why,why:why};
+  });
+}
+function tlBoardData(){   // 排班頁時間軸資料：勤務(可編輯)＋站哨(唯讀)＋準則日常事件(唯讀)＋補休/不在
+  var md=curDate().replace(/[（(].*$/,"");
+  var solids=[],untimed=[],marks=[],anchors=[];
+  state.duties.forEach(function(d){if(d.removed)return;var t=d.schedTime||d.time||"",sp=spanMin(t),o=occSpan(t);if(o)anchors.push(o);
+    var bk={kind:"duty",id:d.id,label:d.label,group:planGroup(d),keepAll:!!d.keepAll,count:d.count,filled:(d.keepAll?8:d.assigned.length),people:(d.keepAll?PEOPLE.map(function(p){return p.id;}):d.assigned.slice())};
+    if(sp&&sp[1]>sp[0]){bk.s=sp[0];bk.e=sp[1];bk.tentative=false;solids.push(bk);}   // 有起訖→實心方塊
+    else if(sp){bk.s=sp[0];bk.e=Math.min(TL_DAYEND,sp[0]+30);bk.tentative=true;solids.push(bk);}   // 只有點→約30分虛塊（提示補結束時間）
+    else{untimed.push(bk);}   // 完全沒填→上方「未定時段」小丸
+  });
+  (guardEventsFor(md)||[]).forEach(function(g){var sp=spanMin(g.range);if(!sp)return;anchors.push(sp);solids.push({kind:"guard",id:"",label:g.label,group:"站哨",s:sp[0],e:sp[1],tentative:false,people:g.people.slice()});});
+  effectiveTimed().forEach(function(it){if(it.min==null)return;anchors.push([it.min,it.min]);marks.push({min:it.min,range:it.range,text:it.text});});
+  var ro=restsOutsFor(md);ro.rests.forEach(function(r){if(r.s!=null)anchors.push([r.s,r.e==null?r.s:r.e]);});
+  return {md:md,solids:solids,untimed:untimed,marks:marks,anchors:anchors,rests:ro.rests,outs:ro.outs};
+}
+function tlBoardToggle(){
+  return '<div style="display:flex;gap:5px;background:'+C.line+';padding:3px;border-radius:12px;margin:14px 0 4px;">'+[["list","清單"],["time","時間軸"]].map(function(m){var on=(state.boardView||"list")===m[0];return '<button class="btn" data-action="board-view" data-v="'+m[0]+'" style="flex:1;padding:9px 0;border-radius:9px;font-size:13.5px;font-weight:800;border:none;background:'+(on?C.surface:"transparent")+';color:'+(on?C.greenDeep:C.sub)+';box-shadow:'+(on?"0 1px 4px rgba(0,0,0,.12)":"none")+';">'+m[1]+'</button>';}).join("")+'</div>';
+}
+function boardTimeline(){
+  var edit=!state.readOnly&&state.boardMode!=="view";
+  var D=tlBoardData();
+  var now=(D.md===todayLabel())?(function(){var n=new Date();return n.getHours()*60+n.getMinutes();})():null;
+  var ax=tlAxis(D.anchors,now);
+  var addBox=edit?addDutyBlock():"";
+  var summ="";
+  if(D.outs.length||D.rests.length){var parts=[];D.outs.forEach(function(o){parts.push('<span style="color:'+absColor(o.reason)+';font-weight:800;">'+esc(short2(nameOf(o.pid)))+' '+esc(o.reason)+'</span>');});D.rests.forEach(function(r){parts.push('<span style="color:'+absColor(r.reason||"補休")+';font-weight:800;">'+esc(short2(nameOf(r.pid)))+' '+esc(r.reason||"補休")+' '+esc(fmtSpan(r.range))+'</span>');});summ='<div style="background:'+C.surface+';border:1px solid '+C.line+';border-radius:11px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;line-height:1.8;">'+parts.join('　')+'</div>';}
+  if(!ax)return '<div style="margin-top:6px;">'+summ+card('<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:24px 12px;line-height:1.7;">還沒有排定時段的勤務。<br>'+(edit?'下面「手動新增勤務」或到清單設時間就會出現。':'目前沒有可顯示的時段。')+'</div>')+addBox+'</div>';
+  var untimedRow=D.untimed.length?('<div style="margin-bottom:9px;"><div style="font-size:11px;font-weight:800;color:'+C.sub+';margin-bottom:5px;">未定時段（點我設時間、排人）</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'+D.untimed.map(function(bk){var col=dayGroupColor(bk.group);return '<button class="btn" data-action="tl-open" data-duty="'+esc(bk.id)+'" style="display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;border:1px dashed '+col+';background:'+col+'0E;color:'+col+';font-size:11.5px;font-weight:700;">'+esc(bk.label)+' <span style="color:'+C.sub+';font-weight:600;">'+(bk.keepAll?"全":bk.filled+"/"+bk.count)+'</span></button>';}).join("")+'</div></div>'):"";
+  var GUT=46,lc=tlLanes(D.solids),wide=lc>3;
+  var laneCss=function(lane){return wide?('left:'+(GUT+lane*96)+'px;width:92px;'):('left:calc('+GUT+'px + (100% - '+GUT+'px) * '+lane+' / '+lc+');width:calc((100% - '+GUT+'px) / '+lc+' - 4px);');};
+  var pieces="";
+  ax.B.forEach(function(m){var yy=ax.y(m);pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+yy+'px;height:1px;background:'+C.line+';opacity:.7;"></div><div style="position:absolute;left:0;top:'+(yy-7)+'px;width:'+(GUT-6)+'px;text-align:right;font-size:10.5px;font-weight:700;color:'+C.sub+';font-variant-numeric:tabular-nums;">'+esc(tlHM(m))+'</div>';});
+  D.marks.forEach(function(mk){var yy=ax.y(mk.min);pieces+='<button class="btn" data-action="tl-free" data-s="'+mk.min+'" data-e="'+mk.min+'" data-label="'+esc(mk.text)+'" data-tm="'+esc(fmtSpan(mk.range))+'" style="position:absolute;left:'+GUT+'px;top:'+(yy-8)+'px;max-width:calc(100% - '+GUT+'px);display:flex;align-items:center;gap:4px;border:none;background:transparent;padding:0;z-index:2;"><span style="width:5px;height:5px;border-radius:999px;background:'+C.brass+';flex:0 0 auto;"></span><span style="font-size:9.5px;font-weight:700;color:'+C.brass+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(mk.text)+'</span></button>';});
+  D.solids.forEach(function(bk){var top=ax.y(bk.s),hh=Math.max(bk.tentative?20:26,ax.y(bk.e)-top),col=dayGroupColor(bk.group),isG=(bk.kind==="guard");var who=bk.keepAll?"全班":(bk.people||[]).map(function(id){return esc(short2(nameOf(id)));}).join(" ");
+    var act=isG?('data-action="tl-free" data-s="'+bk.s+'" data-e="'+bk.e+'" data-label="'+esc(bk.label)+'" data-tm="'+esc(tlHM(bk.s)+"–"+tlHM(bk.e))+'"'):('data-action="tl-open" data-duty="'+esc(bk.id)+'"');
+    var cnt=isG?'<span style="font-size:9px;font-weight:800;color:'+col+';">哨</span>':('<span style="font-size:9.5px;font-weight:800;color:'+(bk.filled>=bk.count?col:C.amber)+';">'+(bk.keepAll?"全":(bk.filled+"/"+bk.count))+'</span>');
+    pieces+='<button class="btn" '+act+' style="position:absolute;'+laneCss(bk.lane)+'top:'+top+'px;height:'+hh+'px;border:1px '+(bk.tentative?"dashed":"solid")+' '+col+';border-left:4px solid '+col+';border-radius:9px;background:'+col+(bk.tentative?'0E':'18')+';text-align:left;padding:3px 6px;overflow:hidden;z-index:3;"><div style="display:flex;align-items:center;gap:4px;justify-content:space-between;"><span style="font-size:11px;font-weight:800;color:'+col+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(bk.label)+(bk.tentative?'<span style="font-weight:600;color:'+C.sub+';">·約</span>':'')+'</span>'+cnt+'</div>'+(hh>=42?'<div style="font-size:10px;color:'+C.ink+';margin-top:2px;line-height:1.3;opacity:.85;overflow:hidden;">'+(who||'<span style="color:'+C.amber+';">未排</span>')+'</div>':"")+'</button>';});
+  if(now!=null&&now>=ax.lo&&now<=ax.hi){var ny=ax.y(now);pieces+='<div style="position:absolute;left:0;right:0;top:'+ny+'px;height:0;border-top:2px solid '+C.red+';z-index:5;"></div><div style="position:absolute;left:0;top:'+(ny-7)+'px;width:'+(GUT-6)+'px;text-align:right;font-size:10px;font-weight:800;color:'+C.red+';z-index:6;">現在</div>';}
+  var innerStyle=wide?('position:relative;height:'+ax.H+'px;width:'+(GUT+lc*96+4)+'px;'):('position:relative;height:'+ax.H+'px;');
+  var legend='<div style="font-size:11px;color:'+C.sub+';margin-top:8px;line-height:1.6;">實線＝已排時段（重疊會並排，一眼看出卡到）；虛線「·約」＝只填了起始、待補結束；棕點＝日常行程。點方塊看誰有空／排人。</div>';
+  return '<div style="margin-top:6px;">'+summ+untimedRow+card('<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><div style="'+innerStyle+'">'+pieces+'</div></div>')+legend+addBox+'</div>';
+}
+function tlBlockInner(d){
+  var edit=!state.readOnly&&state.boardMode!=="view";
+  var md=curDate().replace(/[（(].*$/,"");
+  var oc=occSpan(d.schedTime||d.time||"");
+  var sp0=spanMin(d.schedTime||"");
+  var timeStr=d.schedTime?(sp0&&sp0[1]>sp0[0]?fmtSpan(d.schedTime):hmFmt(d.schedTime)+" 起（約 30 分，可補結束時間）"):"未設時段";
+  var head='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;"><div style="flex:1;min-width:0;">'+(edit?'<input data-input="tl-name" value="'+esc(d.label)+'" style="width:100%;font-size:16px;font-weight:800;color:'+C.ink+';border:none;border-bottom:1.5px solid '+C.line+';background:transparent;outline:none;padding:2px 0;" />':'<div style="font-size:16px;font-weight:800;">'+esc(d.label)+'</div>')+'</div>'+xBtn()+'</div>';
+  var gc=dayGroupColor(planGroup(d));
+  var gtag='<span style="font-size:11px;font-weight:800;color:'+gc+';background:'+gc+'1A;padding:2px 8px;border-radius:7px;">'+esc(planGroup(d))+'</span>';
+  var chips=effectiveTimed().slice(0,16).map(function(it){var on=(d.schedTime||"")===it.range;return '<button class="btn" data-action="set-time" data-t="'+esc(it.range)+'" style="padding:4px 8px;border-radius:7px;font-size:11px;font-weight:700;border:1px solid '+(on?C.green:C.line)+';background:'+(on?C.greenSoft:C.surface)+';color:'+(on?C.greenDeep:C.sub)+';font-variant-numeric:tabular-nums;">'+esc(it.range)+'</button>';}).join("");
+  var timeBox=edit?('<div style="margin:2px 0 12px;">'+label("時段（例 0600-0740；只填 0600＝往下虛；留白＝整天虛）")+'<div style="display:flex;gap:7px;margin-top:7px;"><input data-input="dtime" value="'+esc(d.schedTime||"")+'" placeholder="0600-0740" style="flex:1;padding:9px 11px;border-radius:9px;border:1px solid '+C.line+';background:'+C.bg+';font-size:13.5px;outline:none;font-family:ui-monospace,Menlo,monospace;" /><button class="btn" data-action="tl-clear" style="flex:0 0 auto;padding:0 12px;border-radius:9px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:12.5px;">清空</button></div>'+(chips?'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;">'+chips+'</div>':"")+'</div>'):('<div style="margin:2px 0 12px;font-size:13px;font-weight:700;color:'+C.greenDeep+';">'+esc(timeStr)+'</div>');
+  var ctrl=edit?('<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">'+(d.keepAll?"":'<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:12.5px;color:'+C.sub+';">人數</span><div style="display:flex;align-items:center;gap:2px;border:1px solid '+C.line+';border-radius:9px;padding:2px;"><button class="btn" data-action="count-dec" style="width:28px;height:28px;border-radius:7px;border:none;background:'+C.bg+';color:'+C.green+';display:flex;align-items:center;justify-content:center;">'+icon("minus",14)+'</button><span style="width:22px;text-align:center;font-size:15px;font-weight:800;">'+d.count+'</span><button class="btn" data-action="count-inc" style="width:28px;height:28px;border-radius:7px;border:none;background:'+C.bg+';color:'+C.green+';display:flex;align-items:center;justify-content:center;">'+icon("plus",14)+'</button></div></div>')+(d.kind==="meal"?"":'<button class="btn" data-action="toggle-keepall" style="display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:9px;border:1px solid '+(d.keepAll?C.green:C.line)+';background:'+(d.keepAll?C.greenSoft:C.surface)+';color:'+(d.keepAll?C.greenDeep:C.sub)+';font-size:12.5px;font-weight:600;">八人一起</button>')+'</div>'):"";
+  var freeList=tlFreeAt(oc?oc[0]:null,oc?oc[1]:null,md,d.id),freeN=freeList.filter(function(x){return x.free;}).length;
+  var listHtml=d.keepAll?'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:20px 0;">這項全班一起，不用選人。</div>':freeList.map(function(fx){
+    var p=personByCode(fx.pid),on=d.assigned.indexOf(fx.pid)>=0,warn=!on&&!fx.free;
+    if(pickConfirm===fx.pid&&edit)return '<div style="width:100%;display:flex;align-items:center;gap:9px;padding:9px 8px;border-radius:11px;background:'+C.amberSoft+';border:1px solid '+C.amber+';">'+badge(p.code,28,"mute")+'<div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:800;color:'+C.amber+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(nameOf(fx.pid))+'　'+esc(fx.why)+'</div><div style="font-size:11px;color:'+C.sub+';">還是要排他嗎？</div></div><button class="btn" data-action="pick-warn-cancel" style="flex:0 0 auto;padding:8px 11px;border-radius:9px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:12.5px;">取消</button><button class="btn" data-action="pick-warn-go" data-pid="'+fx.pid+'" style="flex:0 0 auto;padding:8px 12px;border-radius:9px;border:none;background:'+C.amber+';color:#fff;font-weight:800;font-size:12.5px;">仍要排</button></div>';
+    var act=!edit?'data-action="noop"':(warn?('data-action="pick-warn" data-pid="'+fx.pid+'"'):('data-action="pick-toggle" data-pid="'+fx.pid+'"'));
+    var sub=on?"已排":fx.free?"有空":fx.why,subCol=on?C.greenDeep:fx.free?C.green:C.amber;
+    return '<button '+act+' style="width:100%;display:flex;align-items:center;gap:11px;padding:10px 8px;border-radius:11px;border:none;background:'+(on?C.greenSoft:"transparent")+';opacity:'+(warn?0.6:1)+';text-align:left;">'+badge(p.code,30,on?"green":"mute")+'<div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:700;color:'+C.ink+';">'+esc(nameOf(fx.pid))+'</div><div style="font-size:11.5px;color:'+subCol+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(sub)+'</div></div><span style="width:24px;height:24px;border-radius:999px;border:2px solid '+(on?C.green:fx.free?C.line:C.amber)+';background:'+(on?C.green:"transparent")+';display:flex;align-items:center;justify-content:center;flex:0 0 auto;">'+(on?icon("check",14,"#fff"):"")+'</span></button>';
+  }).join("");
+  var delBtn=edit?'<button class="btn" data-action="del-duty" style="width:100%;margin-top:10px;padding:10px;border-radius:10px;border:1px solid '+C.redSoft+';background:'+C.redSoft+';color:'+C.red+';font-weight:700;font-size:13px;">刪掉這項勤務</button>':"";
+  var cap=oc?('　·　此時段 '+freeN+' 人有空'):'　·　未設時段';
+  return handleBar()+head+'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'+gtag+'<span style="font-size:11.5px;color:'+C.sub+';font-weight:700;">'+(d.keepAll?"全班":d.assigned.length+"/"+d.count)+cap+'</span></div>'+timeBox+ctrl+'<div class="sheet-list" style="max-height:40vh;overflow-y:auto;">'+listHtml+'</div>'+delBtn;
+}
+function tlFreeInner(){
+  var f=state.tlFree||{},md=curDate().replace(/[（(].*$/,"");
+  var oc=(f.s!=null&&f.e!=null&&f.e>f.s)?[f.s,f.e]:(f.s!=null?occSpan(tlHM(f.s).replace(":","")):null);
+  var freeList=tlFreeAt(oc?oc[0]:null,oc?oc[1]:null,md,null),freeN=freeList.filter(function(x){return x.free;}).length;
+  var rows=freeList.map(function(fx){var p=personByCode(fx.pid);return '<div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid '+C.line+';"><span style="width:9px;height:9px;border-radius:999px;background:'+(fx.free?C.green:C.amber)+';flex:0 0 auto;"></span>'+badge(p.code,26,fx.free?"green":"mute")+'<div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:700;color:'+C.ink+';">'+esc(nameOf(fx.pid))+'</div></div><span style="font-size:12px;font-weight:700;color:'+(fx.free?C.green:C.amber)+';white-space:nowrap;">'+(fx.free?"有空":esc(fx.why))+'</span></div>';}).join("");
+  return handleBar()+'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;"><div style="font-size:16px;font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(f.label||"這個時段")+'</div>'+xBtn()+'</div><div style="font-size:12.5px;color:'+C.sub+';font-weight:700;margin-bottom:10px;">'+esc(f.tm||(oc?tlHM(oc[0])+"–"+tlHM(oc[1]):""))+'　·　'+freeN+' 人有空</div><div class="sheet-list" style="max-height:52vh;overflow-y:auto;">'+rows+'</div>';
+}
+function modeC(plan){   // 行程頁：八人時段表（Y=時間、X=8人）
+  var items={},anchors=[];
+  PEOPLE.forEach(function(p){items[p.id]=personDayItems(plan,p.id).map(function(it){var sp=spanMin(it.range),s=sp?sp[0]:(it.min===99999?null:it.min),e=sp&&sp[1]>sp[0]?sp[1]:(s!=null?Math.min(TL_DAYEND,s+30):null);if(s!=null)anchors.push([s,e==null?s:e]);return {s:s,e:e,label:it.label,group:it.group};});});
+  var outMap={};(plan.outs||[]).forEach(function(o){outMap[o.pid]=o.reason;});
+  var now=(plan.date===todayLabel())?(function(){var n=new Date();return n.getHours()*60+n.getMinutes();})():null;
+  var ax=tlAxis(anchors,now);
+  var nowLine="";
+  if(now!=null){var doing=[];PEOPLE.forEach(function(p){if(outMap[p.id]){doing.push('<span style="color:'+C.sub+';">'+esc(short2(nameOf(p.id)))+' '+esc(outMap[p.id])+'</span>');return;}var cur=null;items[p.id].forEach(function(it){if(it.s!=null&&it.e!=null&&now>=it.s&&now<it.e)cur=it;});if(cur)doing.push('<span style="color:'+dayGroupColor(cur.group)+';font-weight:800;">'+esc(short2(nameOf(p.id)))+' '+esc(cur.group==="站哨"?"站哨":(cur.label||cur.group))+'</span>');});nowLine='<div style="background:'+C.surface+';border:1px solid '+C.line+';border-radius:11px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;line-height:1.85;"><b style="color:'+C.red+';">現在 '+tlHM(now)+'</b>　'+(doing.length?doing.join('　'):'<span style="color:'+C.sub+';">大家都沒排勤務</span>')+'</div>';}
+  if(!ax)return nowLine+'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:30px 12px;">這天還沒有排定時段的勤務可畫。</div>';
+  var GUT=34;
+  var headRow='<div style="display:flex;padding-left:'+GUT+'px;margin-bottom:5px;">'+PEOPLE.map(function(p){return '<div style="flex:1;min-width:0;display:flex;justify-content:center;">'+badge(p.code,22,outMap[p.id]?"mute":"green")+'</div>';}).join("")+'</div>';
+  var pieces="";
+  ax.B.forEach(function(m){var yy=ax.y(m);pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+yy+'px;height:1px;background:'+C.line+';opacity:.6;"></div><div style="position:absolute;left:0;top:'+(yy-6)+'px;width:'+(GUT-3)+'px;text-align:right;font-size:9.5px;font-weight:700;color:'+C.sub+';font-variant-numeric:tabular-nums;">'+esc(tlHM(m))+'</div>';});
+  PEOPLE.forEach(function(p,ci){var colLeft='calc('+GUT+'px + (100% - '+GUT+'px) * '+ci+' / 8)',colW='calc((100% - '+GUT+'px) / 8)';
+    if(outMap[p.id])pieces+='<div style="position:absolute;left:'+colLeft+';width:'+colW+';top:'+ax.y(ax.lo)+'px;height:'+(ax.y(ax.hi)-ax.y(ax.lo))+'px;background:'+C.line+'55;"></div>';
+    items[p.id].forEach(function(it){if(it.s==null)return;var top=ax.y(it.s),hh=Math.max(16,ax.y(it.e==null?it.s:it.e)-top),col=dayGroupColor(it.group);pieces+='<div style="position:absolute;left:calc('+colLeft+' + 1px);width:calc('+colW+' - 3px);top:'+top+'px;height:'+hh+'px;background:'+col+';border-radius:5px;opacity:.92;overflow:hidden;padding:1px 2px;"><div style="font-size:8.5px;font-weight:800;color:#fff;line-height:1.15;overflow:hidden;">'+esc((it.group==="站哨"?"哨":(it.label||it.group)).slice(0,4))+'</div></div>';});
+  });
+  if(now!=null&&now>=ax.lo&&now<=ax.hi){var ny=ax.y(now);pieces+='<div style="position:absolute;left:0;right:0;top:'+ny+'px;height:0;border-top:2px solid '+C.red+';z-index:5;"></div>';}
+  return nowLine+headRow+card('<div style="position:relative;height:'+ax.H+'px;">'+pieces+'</div>');
+}
 function modeA(plan){
   var rowMap={};
   function ensureRow(min,range,text){
@@ -1288,8 +1410,8 @@ function dayPage(){
   var plan=cp.plan,mode=state.dayView.mode||"A";
   var selKey=plan.date;
   var chipRow='<div style="display:flex;gap:7px;overflow-x:auto;padding:2px 2px 10px;-webkit-overflow-scrolling:touch;">'+dates.map(function(c){var on=c.key===selKey;return '<button class="btn" data-action="day-date" data-d="'+esc(c.key)+'" style="flex:0 0 auto;padding:6px 13px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid '+(on?C.green:C.line)+';background:'+(on?C.greenSoft:C.surface)+';color:'+(on?C.greenDeep:C.sub)+';white-space:nowrap;">'+esc(c.label)+(c.key===state.activeDate&&state.gongban.loaded?" ·排":"")+'</button>';}).join("")+'</div>';
-  var toggle='<div style="display:flex;gap:5px;background:'+C.line+';padding:3px;border-radius:12px;margin-bottom:12px;">'+[["A","\u7576\u5929\u6d41\u7a0b"],["B","\u516b\u4eba\u5206\u5de5"]].map(function(mm){var on=mode===mm[0];return '<button class="btn" data-action="day-mode" data-m="'+mm[0]+'" style="flex:1;padding:9px 0;border-radius:9px;font-size:13.5px;font-weight:800;border:none;background:'+(on?C.surface:"transparent")+';color:'+(on?C.greenDeep:C.sub)+';box-shadow:'+(on?"0 1px 4px rgba(0,0,0,.12)":"none")+';">'+mm[1]+'</button>';}).join("")+'</div>';
-  var body=mode==="A"?modeA(plan):(dayLegend()+modeB(plan));
+  var toggle='<div style="display:flex;gap:5px;background:'+C.line+';padding:3px;border-radius:12px;margin-bottom:12px;">'+[["A","\u7576\u5929\u6d41\u7a0b"],["B","\u516b\u4eba\u5206\u5de5"],["C","\u516b\u4eba\u6642\u6bb5\u8868"]].map(function(mm){var on=mode===mm[0];return '<button class="btn" data-action="day-mode" data-m="'+mm[0]+'" style="flex:1;padding:9px 0;border-radius:9px;font-size:12.5px;font-weight:800;border:none;background:'+(on?C.surface:"transparent")+';color:'+(on?C.greenDeep:C.sub)+';box-shadow:'+(on?"0 1px 4px rgba(0,0,0,.12)":"none")+';">'+mm[1]+'</button>';}).join("")+'</div>';
+  var body=mode==="A"?modeA(plan):mode==="C"?(dayLegend()+modeC(plan)):(dayLegend()+modeB(plan));
   var statusBar="";
   var outs=plan.outs||[],rests=plan.rests||[];
   if(outs.length||rests.length){
@@ -1323,7 +1445,7 @@ var root=document.getElementById("root"),navEl=document.getElementById("nav"),fo
 function render(){
   refreshHist();
   var h=header();
-  if(state.page==="board"){h+=pasteCard()+boardTabs()+rescueBar();if(state.gongban.loaded&&state.boardOpen){var ro=(state.boardMode==="view");if(ro)h+='<div style="margin-top:12px;display:flex;align-items:center;gap:7px;background:'+C.brassSoft+';border:1px solid '+C.brass+';border-radius:11px;padding:9px 13px;color:'+C.amber+';font-weight:700;font-size:12.5px;">'+icon("eye",15,C.brass)+' 閱讀模式：可看不可改，點上面鉛筆切換編輯</div>';syncAvail();h+=schedCard()+availCard()+mealsRow()+fencaRow()+dutyList();if(!state.readOnly){h+=boardActions();if(state.showPreview)h+=previewCard();h+=commitBtn();}}}
+  if(state.page==="board"){h+=pasteCard()+boardTabs()+rescueBar();if(state.gongban.loaded&&state.boardOpen){var ro=(state.boardMode==="view");if(ro)h+='<div style="margin-top:12px;display:flex;align-items:center;gap:7px;background:'+C.brassSoft+';border:1px solid '+C.brass+';border-radius:11px;padding:9px 13px;color:'+C.amber+';font-weight:700;font-size:12.5px;">'+icon("eye",15,C.brass)+' 閱讀模式：可看不可改，點上面鉛筆切換編輯</div>';syncAvail();h+=schedCard()+availCard()+tlBoardToggle();h+=(state.boardView==="time")?boardTimeline():(mealsRow()+fencaRow()+dutyList());if(!state.readOnly){h+=boardActions();if(state.showPreview)h+=previewCard();h+=commitBtn();}}}
   else if(state.page==="guard"){h+=guardPage();}
   else if(state.page==="day"){h+=dayPage();}
   else{h+=statsPage();}
@@ -1331,14 +1453,14 @@ function render(){
   navEl.innerHTML='<button data-action="go-board" class="'+(state.page==="board"?"on":"")+'">'+icon("board",20)+'排班</button><button data-action="go-guard" class="'+(state.page==="guard"?"on":"")+'">'+icon("shield",20)+'站哨</button><button data-action="go-day" class="'+(state.page==="day"?"on":"")+'">'+icon("calendar",20)+'行程</button><button data-action="go-stats" class="'+(state.page==="stats"?"on":"")+'">'+icon("chart",20)+'統計</button>';
   if(focusEl){var el=root.querySelector('[data-input="'+focusEl+'"]');if(el)el.focus();focusEl=null;}
 }
-function onInput(e){var t=e.target;if(!t.getAttribute)return;if(state.readOnly)return;var k=t.getAttribute("data-input");if(!k)return;if(k==="paste")pasteText=t.value;else if(k==="import")importText=t.value;else if(k==="restore")restoreText=t.value;else if(k==="syncurl")syncInput=t.value;else if(k==="gpaste")state.guardPaste=t.value;else if(k==="af-name")state.addForm.name=t.value;else if(k==="af-time")state.addForm.time=t.value;else if(k==="spaste")state.schedPaste=t.value;else if(k==="abs-start")state.absForm.start=t.value;else if(k==="abs-range")state.absForm.range=t.value;else if(k==="abs-reason-name")state.absForm.reason=t.value;else if(k==="evt-label")state.evtForm.label=t.value;else if(k==="evt-range")state.evtForm.range=t.value;else if(k==="dtime"){var cd=currentDuty();if(cd){cd.schedTime=t.value;cd.timeSrc="manual";}}else if(k==="name"){state.names[t.getAttribute("data-id")]=t.value;persist();}}
+function onInput(e){var t=e.target;if(!t.getAttribute)return;if(state.readOnly)return;var k=t.getAttribute("data-input");if(!k)return;if(k==="paste")pasteText=t.value;else if(k==="import")importText=t.value;else if(k==="restore")restoreText=t.value;else if(k==="syncurl")syncInput=t.value;else if(k==="gpaste")state.guardPaste=t.value;else if(k==="af-name")state.addForm.name=t.value;else if(k==="af-time")state.addForm.time=t.value;else if(k==="spaste")state.schedPaste=t.value;else if(k==="abs-start")state.absForm.start=t.value;else if(k==="abs-range")state.absForm.range=t.value;else if(k==="abs-reason-name")state.absForm.reason=t.value;else if(k==="evt-label")state.evtForm.label=t.value;else if(k==="evt-range")state.evtForm.range=t.value;else if(k==="dtime"){var cd=currentDuty();if(cd){cd.schedTime=t.value;cd.timeSrc="manual";}}else if(k==="tl-name"){var cn=currentDuty();if(cn)cn.label=t.value;}else if(k==="name"){state.names[t.getAttribute("data-id")]=t.value;persist();}}
 root.addEventListener("input",onInput);overlay.addEventListener("input",onInput);
 
 function handle(a,el){
   var duty=el.getAttribute("data-duty"),pid=el.getAttribute("data-pid"),id=el.getAttribute("data-id"),day=el.getAttribute("data-day"),cat=el.getAttribute("data-cat"),shift=el.getAttribute("data-shift");
   if(a==="noop")return;
   if(a==="unlock"){var code=null;try{code=window.prompt("輸入編輯密碼解鎖");}catch(e){}if(code===null)return;if(code===EDIT_CODE){try{localStorage.setItem("duty-edit-ok","1");}catch(e){}state.readOnly=false;pulledOk=false;pendingPush=false;flash("已解鎖，正在讀取雲端資料…");if(state.syncUrl)pullSync();render();}else{flash("密碼不對");}return;}
-  if(state.readOnly){var VIEW_OK={"go-board":1,"go-guard":1,"go-day":1,"go-stats":1,"day-mode":1,"day-date":1,"board-load":1,"board-close":1,"open-person":1,"ps-toggle":1,"close-sheet":1,"toggle-preview":1,"copy-filled":1,"copy-persons":1,"gcopy":1,"copy-backup":1,"pull-now":1};if(!VIEW_OK[a]){flash("唯讀模式：只能看，無法修改");return;}}
+  if(state.readOnly){var VIEW_OK={"go-board":1,"go-guard":1,"go-day":1,"go-stats":1,"day-mode":1,"day-date":1,"board-view":1,"tl-open":1,"tl-free":1,"board-load":1,"board-close":1,"open-person":1,"ps-toggle":1,"close-sheet":1,"toggle-preview":1,"copy-filled":1,"copy-persons":1,"gcopy":1,"copy-backup":1,"pull-now":1};if(!VIEW_OK[a]){flash("唯讀模式：只能看，無法修改");return;}}
   if(state.page==="board"&&state.boardMode==="view"&&{"avail":1,"pick-toggle":1,"pick-warn":1,"pick-warn-go":1,"pick-warn-cancel":1,"set-extra":1,"set-time":1,"toggle-adv":1,"count-dec":1,"count-inc":1,"toggle-keepall":1,"del-duty":1,"open-add":1,"af-period":1,"af-extra":1,"af-keepall":1,"af-dec":1,"af-inc":1,"af-add":1,"af-cancel":1,"auto":1,"commit":1,"open-absence":1}[a]){flash("閱讀模式：點上面鉛筆切換編輯");return;}
   if(a==="noop")return;
   else if(a==="go-board"){state.page="board";closeSheet();state.page="board";render();}
@@ -1346,6 +1468,10 @@ function handle(a,el){
   else if(a==="go-stats"){state.page="stats";closeSheet();state.page="stats";render();}
   else if(a==="go-day"){state.page="day";closeSheet();state.page="day";render();}
   else if(a==="day-mode"){state.dayView.mode=el.getAttribute("data-m");render();}
+  else if(a==="board-view"){state.boardView=el.getAttribute("data-v");render();}
+  else if(a==="tl-open"){var td=dutyById(el.getAttribute("data-duty"));if(td)openSheet("tlblock",td.id);else flash("找不到這項");}
+  else if(a==="tl-free"){var ts=parseInt(el.getAttribute("data-s"),10),te=parseInt(el.getAttribute("data-e"),10);state.tlFree={label:el.getAttribute("data-label")||"這個時段",s:isNaN(ts)?null:ts,e:isNaN(te)?null:te,tm:el.getAttribute("data-tm")||""};openSheet("tlfree",0);}
+  else if(a==="tl-clear"){var tc=currentDuty();if(tc){tc.schedTime="";tc.timeSrc="manual";}refreshSheet();}
   else if(a==="day-date"){state.dayView.date=el.getAttribute("data-d");render();}
   else if(a==="gparse"){var gt=(state.guardPaste||"").trim();if(!gt){flash("先把衛哨公版貼進來");return;}var gr=parseGuard(state.guardPaste);if(!gr.days.length){flash("沒抓到日期或班次，確認格式");return;}state.guard={raw:state.guardPaste,meta:gr.meta,days:gr.days,loaded:true,committed:false};state.showGuardPaste=false;persist();render();}
   else if(a==="grepaste"){state.showGuardPaste=true;state.guardPaste=state.guard.raw;focusEl="gpaste";render();}
@@ -1462,7 +1588,7 @@ syncAvail();   // 開 App 先依照排休紀錄還原「今日出勤」
 render();
 if(state.syncUrl){state.syncStatus="sync";pullSync();startPoll();}
 fixMealTimes()&&render();
-setInterval(function(){if(state.page==="day"&&!state.sheet&&!state.confirmDelDay){var cp=currentPlan();if(cp&&cp.plan&&cp.plan.date===todayLabel())render();}},60000);
+setInterval(function(){if(state.sheet||state.confirmDelDay)return;if(state.page==="day"){var cp=currentPlan();if(cp&&cp.plan&&cp.plan.date===todayLabel())render();}else if(state.page==="board"&&state.boardView==="time"&&state.gongban.loaded&&state.boardOpen&&curDate().replace(/[（(].*$/,"")===todayLabel())render();},60000);
 </script>
 </body>
 </html>
