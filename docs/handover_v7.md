@@ -124,7 +124,32 @@
 - 一律先讀 v4＋v6＋本檔＋現有 `index.html` 再動；改完先 `node --check` 再功能測。
 - 動同步／資料安全 → v4 第七節＋本檔第一、七節。
 - 回應提醒：上傳覆蓋 GitHub、`?v=N` 避快取；雲端／複製部署後 https 測。**`.gs` 這版沒改，不用重新部署。**
-- 目前 **index.html ≈ v38、Apps Script v3（分片，未動）**。
+- 目前 **index.html ≈ v39、Apps Script v3（分片，未動）**。
+
+---
+
+## 十三、固定時段一致化 ＋ 跨檢視同步 ＋ 準則每天一份（v7 之後再追加）
+
+### (1) 打飯/打掃固定時段，清單/時間軸/行程一致
+- 舊 bug：`defaultTimeFor` 給早上打掃 `0630-0740`（該 0600-0620）、打冰/打水沒吃到（schedTime 空、清單無時間但時間軸卻用 `dutyDefaultRange` 畫 0600-0620）＝三處不一致；打飯拿到準則單點 `0600`（該是 `0600-0730` 整段）。
+- 修：**`defaultTimeFor` 直接回 `dutyDefaultRange`**（打飯/打掃的固定時段）；**`autoTagTimes`／`fixMealTimes` 把 `dutyDefaultRange` 放最優先**（`dr||d.time||schedMatch||defaultTimeFor`），所以打飯/打掃一律用固定時段，不被準則單點或行首時間蓋掉。結果：早上打掃全部 `0600-0620`、晚上浴廁 `2100-2120`、早打 `0600-0730`/午打 `1100-1230`/晚打 `1700-1830`，清單＝時間軸＝行程。
+- **假卡到修掉**：`computeConflicts`／`occupiesFor` 從「粗時段 block」改成 **`dutyEffSpan` 真實分鐘重疊**（跟時間軸同一套）。之前晚打(block PM)＋浴廁(block PM)被誤判卡到→紅字，實際 1700-1830 vs 2100-2120 不重疊。`dutyRow` 的 conf key 也從 `block:pid` 改成 `勤務id:pid`。
+
+### (2) 不論從哪裡新增都同步（行程三子頁＋時間軸＋清單）
+- `dutyDefaultRange(kind==="manual")` 回空 → 手動新增的勤務**沒填時段就是「未定時段」小丸**（之前手動勤務 period 預設 AM→被當打掃塞 0600-0620）。
+- `eventsFromDuties`：手動勤務即使還沒排人也帶進行程（`if(!ppl.length&&d.kind!=="manual")return`）→ 排班新增的勤務會出現在**行程當天流程**。
+- `modeB`（八人分工）頂部加「**全體／提醒**」卡：列出沒排特定人的事（行程不計次、剛新增未排人的勤務）。
+- `modeC`（八人時段表）：把沒排人、有時間的事也畫成**全體背景帶**（跟日常事件同款）。
+- 效果：時間軸小丸新增勤務→清單/時間軸/行程A/B都看得到；行程「新增臨時勤務/行程」加行程(不計次)→行程A（列表）/B（全體提醒）/C（背景帶）都更新。（未定時段的東西進不了 C 的格子，屬正常；仍在 A 的未標時間、B 的全體。）
+
+### (3) 行動準則每天一份，不跨天殘留
+- 舊 bug：重貼隔天公版時，`state.schedule` 還是昨天的準則→`autoTagTimes` 用昨天準則標今天，錯。
+- 修 `parse`（貼公版）：先 `saveBoard()`（存住目前這天含它的準則），切到新日期後 **從 `boards[pd].schedule` 還原這天的準則；沒存過就清空**（`loaded:false`、`schedPaste=""`）。→ 貼新的一天＝準則空白等你貼；貼曾貼過的一天＝自動帶回那天準則，不用重貼。
+- 修 `sparse`（貼準則）：`extractDate(準則)` 跟 `state.activeDate`（公版日期）用 `normMD` 比對，**不同天跳警告** flash（仍允許解析，只是提醒別貼錯）。
+
+### 測試
+- `/tmp/h5.js`（**11 項**）：早上打掃/浴廁/早午晚打固定時段、`computeConflicts` 真實重疊（晚打vs浴廁不卡、真的重疊才卡）、`dutyDefaultRange(manual)` 空、`eventsFromDuties` 手動空勤務進行程而一般空勤務不進。
+- 全套 h..h5 ＝ **133 項全過**；另用 Chromium 端到端：時間軸新增手動勤務→未定時段小丸＋行程A/B/C 同步；行程加行程(不計次)→三子頁都更新；重貼隔天公版→準則空白、切回前一天→準則保留。
 
 ---
 
