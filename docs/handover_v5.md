@@ -110,6 +110,13 @@
 5. **閱讀模式／唯讀點勤務方塊會提醒**：`tl-open` 從 `VIEW_OK` 拿掉（鎖定唯讀→「唯讀模式」flash）、加進 `boardMode==="view"` 擋單（閱讀模式→「點鉛筆切換編輯」flash），跟清單頁 `pick` 一致。站哨/日常的 `tl-free`（純看誰有空）維持可點。
 6. **同時段的打掃收合成一格**（`tlClusterBlocks`/`tlClusterInner`，sheet type `tlcluster`）：早上打掃全部固定 0600-0620、好幾項擠同 20 分鐘會分很多欄很亂 → 把 `group==="打掃"` 且 `dutyEffSpan` 相同 `[s,e]` 的、數量 ≥2 的收合成一格「早上打掃 ×N／晚上打掃 ×N」（s<720＝早上），點開跳清單（`tlClusterMembers` 重算成員），每項點進去就是原本的 `tlblock` 編輯面板。只有 1 項的時段不收合，照舊。cluster 方塊在 `boardTimeline` 是先 `tlClusterBlocks(D.solids)` 再 `tlLanes`，所以早上一堆打掃只佔一欄。`tl-cluster` 在 `VIEW_OK`（唯讀可開清單看），清單裡點成員的 `tl-open` 才會依模式擋。
 
+## 六之三、v5 三次優化（同步、補休可調、排版）
+
+1. **自動補休接進行程頁＋自動分配**：`impliedRestsFrom(duties,md)` 抽出來（不再只讀 `state.duties`）。`planForBoard` 的 `plan.rests` 併入 `impliedRestsExpanded(duties,md)`→行程頁 A/B/C 都看得到自動補休。`autoAssign` 加 `implBlk()`：午打/夜哨/午哨排到的人，其補休時段不會再被自動排其他勤務。
+2. **各檢視同步**：`extraCard(curDate())` 加到排班頁（清單＋時間軸都有）→ 行程頁臨時新增的，排班頁也看得到、能編輯；有時間的臨時項也會畫進排班時間軸（`kind:"extra"`，點→ `dayevt-edit`）。排班的勤務本來就經 `planForBoard` 進行程。今日出勤/排休、站哨補休 都走同一套 `impliedRests`/`absence`。
+3. **午打補休合併＋可調時間**（#2）：`impliedRestsFrom` 現在**一個來源一筆**（一個午打不管幾人＝一筆、`people[]`），時間軸畫成一格。點補休方塊（`tl-restedit`→`tlrest` sheet）可改時段，存在 `d.restRange`（午打）或 `sh.restRange`（站哨），**跟著 boards／guard 同步**；「回預設」清掉 override。
+4. **時間軸重疊左右順序**（#3）：`tlPri()` 站哨0<補休1<分菜2<打飯3<公差4<打掃5，`tlLanes` 依此排序→左邊站哨、右邊打掃。並把橫捲門檻放寬到 `lc>6`（≤6 欄用百分比全塞得下，不會把勤務推到畫面外）。
+
 ## 七、已知未做 / 待議（接手可挑）
 
 1. **點時間→約 30 分**只是預設佔用，判卡到會低估（打飯其實近 90 分）。要更準就讓使用者填範圍（時間軸就是在推他填）。若要早/午/晚打各自預設時長，改 `tlBoardData` 給 meal 一個預設 `e` 即可。
