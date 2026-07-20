@@ -19,12 +19,12 @@ data/
 docs/
   roster.txt           班級名冊（代號=本名）
   duty-rules.md         AI 幫忙「填公版」時要遵守的規則
-  handover_v1~v6.md     歷次專案交接說明，v6 為最新
+  handover_v1~v7.md     歷次專案交接說明，v7 為最新
 ```
 
 ## ⚠️ 修改 index.html / sync_AppsScript.gs 前
 
-**先讀 `docs/handover_v6.md`**（若之後版本更新，永遠讀編號最大的那份）。裡面有完整的資料模型、雲端同步機制、已知 bug 修復紀錄、尚未做的事項。**v4 第七節「資料安全」尤其重要**——那是真實發生過的資料損毀事故換來的保護機制（逐日合併＋墓碑、pull 過才准 push），改 `payload / applyRemote / pushSync / pullSync` 之前必讀，別把保護機制退回去（v5/v6 都沒動這塊，仍以 v4 為準）。
+**先讀 `docs/handover_v7.md`**（若之後版本更新，永遠讀編號最大的那份）。裡面有完整的資料模型、雲端同步機制、已知 bug 修復紀錄、尚未做的事項（v7 第十一～十三節是站哨跨夜時間、解析自動填名字/準據多件事、固定時段一致化/跨檢視同步/準則每天一份）。**v4 第七節「資料安全」尤其重要**——那是真實發生過的資料損毀事故換來的保護機制（逐日合併＋墓碑、pull 過才准 push），改 `payload / applyRemote / pushSync / pullSync` 之前必讀，別把保護機制退回去（v5/v6/v7 都沒動這塊，仍以 v4 為準；v7 站哨多週是照 v4 逐日合併機制擴充的）。
 
 不要只看 index.html 原始碼猜架構；handover 裡記錄了很多「為什麼這樣寫」的 debug 血淚史，原始碼本身看不出來。
 
