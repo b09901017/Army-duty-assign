@@ -115,22 +115,27 @@ function liffSend(){
   commit();                       // core：計入統計（同天覆蓋只算一次）＋ savePlan/saveBoard ＋ persist 上雲
   var filled=buildFilled();
   // M5 之後：這裡也會把 filled/個人分工存進雲端 texts[日期]，給未來 bot 指令用
-  if(window.liff&&liff.isApiAvailable&&liff.isApiAvailable("sendMessages")){
+  // 註：不用 liff.isApiAvailable("sendMessages") 當門檻——某些 LIFF SDK 版本對這個字串會直接丟
+  // "unexpected api name" 例外（而不是回傳 false），所以改成直接嘗試呼叫、失敗再退回複製。
+  var inLine=false;try{inLine=!!(window.liff&&liff.isInClient&&liff.isInClient());}catch(e0){}
+  if(window.liff&&liff.sendMessages&&inLine){
     flash("發送中…");
     try{
       liff.sendMessages([{type:"text",text:filled}]).then(function(){
         flash("已送出，回聊天室長按那則訊息即可轉傳");
         setTimeout(function(){try{if(liff.getContext&&liff.getContext()&&liff.getContext().type!=="external")liff.closeWindow();}catch(e){}},1300);
-      }).catch(function(e){flash("送出失敗（promise）："+((e&&(e.message||e.code||JSON.stringify(e)))||"未知")+"（已計入統計）");});
+      }).catch(function(e){
+        copyText(filled);
+        flash("送出失敗："+((e&&(e.message||e.code||JSON.stringify(e)))||"未知")+"（已計入統計，改為複製）");
+      });
     }catch(e2){
       // liff.sendMessages 本身同步丟例外（非 promise reject）時，上面的 .catch 接不到，這裡補上
-      flash("送出失敗（同步例外）："+((e2&&e2.message)||String(e2))+"（已計入統計）");
+      copyText(filled);
+      flash("送出失敗（同步例外）："+((e2&&e2.message)||String(e2))+"（已計入統計，改為複製）");
     }
   }else{
-    // sendMessages 不可用，兩種可能：①根本不在 LINE 裡開（外部瀏覽器測試）②在 LINE 裡但 LIFF 沒開 chat_message.write 權限／Bot link
-    var inLine=!!(window.liff&&liff.isInClient&&liff.isInClient());
     copyText(filled);
-    flash(inLine?"（LIFF 缺 chat_message.write 權限或未開 Bot link，先複製）已計入統計":"（非 LINE 環境）已計入並複製填好公版");
+    flash(inLine?"（此裝置不支援直接傳送，已複製）已計入統計":"（非 LINE 環境）已計入並複製填好公版");
   }
  }catch(topErr){
    // 兜底：commit()/render()/buildFilled() 任何一步出例外都不再無聲卡住，直接顯示真正的錯誤訊息
