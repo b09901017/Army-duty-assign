@@ -120,7 +120,10 @@ function liffSend(){
       setTimeout(function(){try{if(liff.getContext&&liff.getContext()&&liff.getContext().type!=="external")liff.closeWindow();}catch(e){}},1300);
     }).catch(function(e){flash("送出失敗："+((e&&e.message)||"未知")+"（已計入統計）");});
   }else{
-    copyText(filled);flash("（非 LINE 環境）已計入並複製填好公版");
+    // sendMessages 不可用，兩種可能：①根本不在 LINE 裡開（外部瀏覽器測試）②在 LINE 裡但 LIFF 沒開 chat_message.write 權限／Bot link
+    var inLine=!!(window.liff&&liff.isInClient&&liff.isInClient());
+    copyText(filled);
+    flash(inLine?"（LIFF 缺 chat_message.write 權限或未開 Bot link，先複製）已計入統計":"（非 LINE 環境）已計入並複製填好公版");
   }
 }
 
