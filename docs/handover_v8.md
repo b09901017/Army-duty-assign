@@ -1,4 +1,4 @@
-# 261 排勤務板 — 交接說明 v8（對應 index.html ≈ v43 · Apps Script v3 未動）
+# 261 排勤務板 — 交接說明 v8（對應 index.html ≈ v44 · Apps Script v3 未動）
 
 > 本檔一～六節是「資料同步 bug 修復」；第七節是之後追加的「UIUX 優化」（純畫面）。
 
@@ -128,7 +128,19 @@
   - 人名那行（`sub`）同樣單行 ellipsis，**一定顯示在下面**。
   - 欄位加寬：`wide` 門檻 `lc>6`→`lc>3`、固定欄寬 `96`→`LANEW=132`；≥4 欄就固定寬＋**左右捲**（外層本來就 `overflow-x:auto`），名稱放得下。方塊最小高度 `38→44`（`tentative 24→28`）給名稱＋人名喘息空間（不會撞到同欄下一塊，因為 `tlAxis` 每段 ≥MIN46）。
 
+### (5) 八人時段表：勤務方塊「資訊泡泡」＋日常膠囊上移（v44）
+使用者：喜歡 v43 膠囊，但膠囊會蓋到下面格子的字；希望能點格子看詳情。
+- **日常膠囊上移**：膠囊 `top` 由「置中在事件起點」改成「事件起點**上方**的空檔」（`top=y-CHIPH-1`），因為各人格子文字是垂直置中的，把膠囊放到格子上緣的空檔就比較不會蓋到字。錯開邏輯（`chipRows`）不變。
+- **新增「資訊泡泡」**（`modeC` 的各人勤務方塊）：
+  - 每個非 carry 的勤務方塊變成可點（`data-action="mc-info" data-k="pid@s@ci"`）。
+  - `state.mcInfo`（**純畫面、不存不同步**，`modeC` 開頭 lazy-init `{}`）記錄哪些方塊被點開；handler `mc-info` toggle 該 key 後 `render()`；`VIEW_OK` 已加 `mc-info`（唯讀也能看詳情）。
+  - 選中的方塊：`z-index 6`＋白色 inset outline 標記。
+  - 泡泡：**白底不透明**（`C.surface`）＋該勤務色左邊框，內容「姓名／做什麼／幾點–幾點」。不透明是為了滿足使用者「顏色不要重疊」＝多個泡泡並存也不會顏色互相透疊。
+  - 位置：`ci<=3` 靠左往右展、`ci>=4` 靠右往左展（`right:calc(100% - (innerLeft+innerW))`）；預設在方塊**上方**（`transform:translateY(-100%)`），太靠頂（`top<=44`）就改放下方。泡泡本身也帶 `data-action="mc-info"` 同 key → 點泡泡也能關。
+  - 可同時開多個；再點方塊或泡泡即關。
+- 圖例加「點方塊看誰／做什麼／幾點」。
+
 ### 測試
-- `node --check` 過；node harness 驗證 `boardTimeline`/`modeC`/四頁 render 不炸，且時間軸方塊含 `text-overflow:ellipsis`、長名稱字串在、人名(short2)有進 sub、寬欄 132 有觸發；modeC 日常色籤 z5、靛藍 `#4E6E8E`、紅線從 GUT 起。
+- `node --check` 過；node harness 驗證 `boardTimeline`/`modeC`/四頁 render 不炸、`mc-info` toggle+render 不炸，且時間軸方塊含 `text-overflow:ellipsis`、長名稱字串在、人名(short2)有進 sub、寬欄 132 有觸發；modeC 日常色籤 z5、靛藍 `#4E6E8E`、紅線從 GUT 起。
 - Chromium 實截：排班時間軸（窄/寬視窗都確認長名稱截斷＋人名顯示）、八人時段表（最終版：日常名稱在左欄不蓋格子、中性灰/暖褐、格子文字置中、7/21 紅線對齊）、閱讀 banner 間距。
-- **目前 index.html ≈ v43、Apps Script v3（未動）。**
+- **目前 index.html ≈ v44、Apps Script v3（未動）。**

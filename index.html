@@ -1506,25 +1506,33 @@ function modeC(plan){   // 行程頁：八人時段表（Y=時間、X=8人）＋
     var acc=(dv.kind==="adhoc")?DAILY_ADH:DAILY_RTN,y=ax.y(dv.s);
     if(dv.point)pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+y+'px;height:0;border-top:2px dashed '+acc+'55;z-index:1;"></div>';
     else{var bh=Math.max(10,ax.y(dv.e)-y);pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+y+'px;height:'+bh+'px;background:'+acc+'12;border-top:1.5px solid '+acc+'3A;z-index:1;"></div>';}
-    var top=Math.round(y-CHIPH/2),bot=top+CHIPH,lane=0;   // 膠囊垂直置中在事件起點；相近就往右錯開
+    var top=Math.max(1,Math.round(y)-CHIPH-1),bot=top+CHIPH,lane=0;   // 膠囊放事件起點「上方」的空檔（避開下面置中的格子文字）；相近就往右錯開
     while((chipRows[lane]||[]).some(function(r){return !(top>r.bot+2||bot<r.top-2);}))lane++;
     (chipRows[lane]=chipRows[lane]||[]).push({top:top,bot:bot});
     var tag=(dv.kind==="adhoc")?'<span style="opacity:.85;">臨 </span>':"";
     pieces+='<div style="position:absolute;left:'+(GUT+4+lane*94)+'px;top:'+top+'px;height:'+CHIPH+'px;display:flex;align-items:center;background:'+acc+';color:#fff;font-size:9px;font-weight:800;padding:0 8px;border-radius:999px;line-height:1;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.30);z-index:5;">'+tag+esc(dailyShort(dv.text))+'</div>';
   });
   ax.B.forEach(function(m){var yy=ax.y(m);pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+yy+'px;height:1px;background:'+C.line+';opacity:.6;z-index:3;"></div><div style="position:absolute;left:0;top:'+(yy-6)+'px;width:'+(GUT-3)+'px;text-align:right;font-size:9.5px;font-weight:700;color:'+C.sub+';font-variant-numeric:tabular-nums;z-index:3;">'+esc(tlHM(m))+'</div>';});
-  PEOPLE.forEach(function(p,ci){var colLeft='calc('+GUT+'px + (100% - '+GUT+'px) * '+ci+' / 8)',colW='calc((100% - '+GUT+'px) / 8)';
+  if(!state.mcInfo)state.mcInfo={};   // 哪些勤務方塊被點開資訊泡泡（純畫面、不存不同步）
+  PEOPLE.forEach(function(p,ci){var innerLeft=GUT+'px + (100% - '+GUT+'px) * '+ci+' / 8',innerW='(100% - '+GUT+'px) / 8',colLeft='calc('+innerLeft+')',colW='calc('+innerW+')';
     if(outMap[p.id])pieces+='<div style="position:absolute;left:'+colLeft+';width:'+colW+';top:'+ax.y(ax.lo)+'px;height:'+(ax.y(ax.hi)-ax.y(ax.lo))+'px;background:'+C.line+'55;z-index:3;"></div>';
     items[p.id].forEach(function(it){if(it.s==null)return;var col=dayGroupColor(it.group),top,hh;
       if(it.carry){hh=18;top=(it.pin==="top")?ax.y(ax.lo):(ax.y(ax.hi)-hh);}   // 跨夜哨釘在頂/底
       else{top=ax.y(it.s);hh=Math.max(16,ax.y(it.e==null?it.s:it.e)-top);}
-      pieces+='<div style="position:absolute;left:calc('+colLeft+' + 1px);width:calc('+colW+' - 3px);top:'+top+'px;height:'+hh+'px;background:'+col+';border-radius:5px;opacity:'+(it.carry?'.72':'.94')+';overflow:hidden;padding:1px 2px;z-index:4;display:flex;align-items:center;justify-content:center;'+(it.carry?'border:1px dashed #fff;':'')+'"><div style="font-size:8.5px;font-weight:800;color:#fff;line-height:1.15;text-align:center;overflow:hidden;">'+esc((it.group==="站哨"?(it.carry?"跨哨":"哨"):(it.label||it.group)).slice(0,4))+'</div></div>';});
-  });
+      var what=(it.group==="站哨"?(it.carry?"跨夜哨":"站哨"):(it.label||it.group));
+      var key=p.id+"@"+it.s+"@"+ci,sel=!it.carry&&state.mcInfo[key];
+      pieces+='<div '+(it.carry?'':'data-action="mc-info" data-k="'+esc(key)+'" ')+'style="position:absolute;left:calc('+innerLeft+' + 1px);width:calc('+innerW+' - 3px);top:'+top+'px;height:'+hh+'px;background:'+col+';border-radius:5px;opacity:'+(it.carry?'.72':'.94')+';overflow:hidden;padding:1px 2px;z-index:'+(sel?6:4)+';display:flex;align-items:center;justify-content:center;'+(it.carry?'border:1px dashed #fff;':'cursor:pointer;')+(sel?'outline:2px solid #fff;outline-offset:-2px;':'')+'"><div style="font-size:8.5px;font-weight:800;color:#fff;line-height:1.15;text-align:center;overflow:hidden;">'+esc(what.slice(0,4))+'</div></div>';
+      // 資訊泡泡：點勤務方塊跳出（白底不透明＝多個並存也不會顏色互疊）；再點方塊或泡泡就消失
+      if(sel){var nm=nameOf(p.id),tr=(it.e!=null?tlHM(it.s)+"–"+tlHM(it.e):tlHM(it.s)+" 起"),above=(top>44);
+        var pos=(ci<=3)?('left:calc('+innerLeft+');'):('right:calc(100% - ('+innerLeft+' + '+innerW+'));');
+        pos+=above?('top:'+(top-3)+'px;transform:translateY(-100%);'):('top:'+(top+hh+3)+'px;');
+        pieces+='<div data-action="mc-info" data-k="'+esc(key)+'" style="position:absolute;'+pos+'z-index:9;background:'+C.surface+';border:1.5px solid '+col+';border-left:5px solid '+col+';border-radius:9px;padding:5px 9px;box-shadow:0 5px 14px rgba(0,0,0,.25);white-space:nowrap;cursor:pointer;"><div style="font-size:11px;font-weight:800;color:'+col+';line-height:1.35;">'+esc(nm)+'</div><div style="font-size:10.5px;color:'+C.ink+';line-height:1.35;">'+esc(what)+'　<span style="font-variant-numeric:tabular-nums;color:'+C.sub+';font-weight:700;">'+esc(tr)+'</span></div></div>';}
+    });});
   if(now!=null&&now>=ax.lo&&now<=ax.hi){var ny=ax.y(now);
     pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+ny+'px;height:0;border-top:2px solid '+C.red+';z-index:6;"></div>'   // 紅線從格線起（不再蓋到左邊時間欄）
       +'<div style="position:absolute;left:'+(GUT-4)+'px;top:'+(ny-4)+'px;width:8px;height:8px;border-radius:999px;background:'+C.red+';box-shadow:0 0 0 2px '+C.surface+';z-index:7;"></div>'   // 交界紅點
       +'<div style="position:absolute;left:0;top:'+(ny-8)+'px;width:'+(GUT-5)+'px;text-align:right;font-size:9.5px;font-weight:800;color:'+C.red+';font-variant-numeric:tabular-nums;background:'+C.bg+'dd;border-radius:3px;z-index:7;">'+tlHM(now)+'</div>';}   // 左欄紅色現在時間
-  var legend='<div style="font-size:10.5px;color:'+C.sub+';margin-top:7px;line-height:1.7;"><b style="color:'+DAILY_RTN+';">靛紫膠囊</b>＝全班日常（用餐、午休、集合、點名…）；<b style="color:'+DAILY_ADH+';">玫紅・臨</b>＝臨時提醒（不計次）；彩色方塊＝各自勤務（名稱置中）；<b style="color:'+C.red+';">紅線</b>＝現在。</div>';
+  var legend='<div style="font-size:10.5px;color:'+C.sub+';margin-top:7px;line-height:1.7;"><b style="color:'+DAILY_RTN+';">靛紫膠囊</b>＝全班日常（用餐、午休、集合、點名…）；<b style="color:'+DAILY_ADH+';">玫紅・臨</b>＝臨時提醒（不計次）；彩色方塊＝各自勤務（<b>點方塊看誰／做什麼／幾點</b>，可同時開多個、再點消失）；<b style="color:'+C.red+';">紅線</b>＝現在。</div>';
   return nowLine+headRow+card('<div style="position:relative;height:'+ax.H+'px;">'+pieces+'</div>')+legend;
 }
 function modeA(plan){
@@ -1681,7 +1689,7 @@ function handle(a,el){
   var duty=el.getAttribute("data-duty"),pid=el.getAttribute("data-pid"),id=el.getAttribute("data-id"),day=el.getAttribute("data-day"),cat=el.getAttribute("data-cat"),shift=el.getAttribute("data-shift");
   if(a==="noop")return;
   if(a==="unlock"){var code=null;try{code=window.prompt("輸入編輯密碼解鎖");}catch(e){}if(code===null)return;if(code===EDIT_CODE){try{localStorage.setItem("duty-edit-ok","1");}catch(e){}state.readOnly=false;pulledOk=false;pendingPush=false;flash("已解鎖，正在讀取雲端資料…");if(state.syncUrl)pullSync();render();}else{flash("密碼不對");}return;}
-  if(state.readOnly){var VIEW_OK={"go-board":1,"go-guard":1,"go-day":1,"go-stats":1,"day-mode":1,"day-date":1,"board-view":1,"tl-free":1,"tl-cluster":1,"board-load":1,"board-close":1,"board-others":1,"guard-week":1,"toggle-gtally":1,"open-person":1,"ps-toggle":1,"close-sheet":1,"toggle-preview":1,"copy-filled":1,"copy-persons":1,"gcopy":1,"copy-backup":1,"pull-now":1};if(!VIEW_OK[a]){flash("唯讀模式：只能看，無法修改");return;}}
+  if(state.readOnly){var VIEW_OK={"go-board":1,"go-guard":1,"go-day":1,"go-stats":1,"day-mode":1,"mc-info":1,"day-date":1,"board-view":1,"tl-free":1,"tl-cluster":1,"board-load":1,"board-close":1,"board-others":1,"guard-week":1,"toggle-gtally":1,"open-person":1,"ps-toggle":1,"close-sheet":1,"toggle-preview":1,"copy-filled":1,"copy-persons":1,"gcopy":1,"copy-backup":1,"pull-now":1};if(!VIEW_OK[a]){flash("唯讀模式：只能看，無法修改");return;}}
   if(state.page==="board"&&state.boardMode==="view"&&{"avail":1,"pick-toggle":1,"pick-warn":1,"pick-warn-go":1,"pick-warn-cancel":1,"set-extra":1,"set-time":1,"toggle-adv":1,"count-dec":1,"count-inc":1,"toggle-keepall":1,"del-duty":1,"open-add":1,"tl-open":1,"tl-clear":1,"tl-restedit":1,"dayevt-edit":1,"open-dayevt":1,"dayevt-del-row":1,"af-period":1,"af-extra":1,"af-keepall":1,"af-dec":1,"af-inc":1,"af-add":1,"af-cancel":1,"auto":1,"commit":1,"open-absence":1}[a]){flash("閱讀模式：點上面鉛筆切換編輯");return;}
   if(a==="noop")return;
   else if(a==="go-board"){state.page="board";closeSheet();state.page="board";render();}
@@ -1689,6 +1697,7 @@ function handle(a,el){
   else if(a==="go-stats"){state.page="stats";closeSheet();state.page="stats";render();}
   else if(a==="go-day"){state.page="day";closeSheet();state.page="day";render();}
   else if(a==="day-mode"){state.dayView.mode=el.getAttribute("data-m");render();}
+  else if(a==="mc-info"){var mk=el.getAttribute("data-k");if(!state.mcInfo)state.mcInfo={};if(state.mcInfo[mk])delete state.mcInfo[mk];else state.mcInfo[mk]=1;render();}
   else if(a==="board-view"){state.boardView=el.getAttribute("data-v");render();}
   else if(a==="tl-open"){var td=dutyById(el.getAttribute("data-duty"));if(td)openSheet("tlblock",td.id);else flash("找不到這項");}
   else if(a==="tl-free"){var ts=parseInt(el.getAttribute("data-s"),10),te=parseInt(el.getAttribute("data-e"),10);state.tlFree={label:el.getAttribute("data-label")||"這個時段",s:isNaN(ts)?null:ts,e:isNaN(te)?null:te,tm:el.getAttribute("data-tm")||""};openSheet("tlfree",0);}
