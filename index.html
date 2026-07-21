@@ -1494,16 +1494,23 @@ function modeC(plan){   // 行程頁：八人時段表（Y=時間、X=8人）＋
   if(now!=null){var doing=[];var dn=null;daily.forEach(function(dv){if(dv.e!=null&&now>=dv.s&&now<dv.e)dn=dv;});if(dn)doing.push('<span style="color:'+C.sub+';font-weight:800;">全體 '+esc(dailyShort(dn.text))+'</span>');
     PEOPLE.forEach(function(p){if(outMap[p.id]){doing.push('<span style="color:'+C.sub+';">'+esc(short2(nameOf(p.id)))+' '+esc(outMap[p.id])+'</span>');return;}var cur=null;items[p.id].forEach(function(it){if(!it.carry&&it.s!=null&&it.e!=null&&now>=it.s&&now<it.e)cur=it;});if(cur)doing.push('<span style="color:'+dayGroupColor(cur.group)+';font-weight:800;">'+esc(short2(nameOf(p.id)))+' '+esc(cur.group==="站哨"?"站哨":(cur.label||cur.group))+'</span>');});nowLine='<div style="background:'+C.surface+';border:1px solid '+C.line+';border-radius:11px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;line-height:1.85;"><b style="color:'+C.red+';">現在 '+tlHM(now)+'</b>　'+(doing.length?doing.join('　'):'<span style="color:'+C.sub+';">大家都沒排勤務</span>')+'</div>';}
   if(!ax)return nowLine+'<div style="text-align:center;color:'+C.sub+';font-size:13px;padding:30px 12px;">這天還沒有可畫的時段。</div>';
-  var GUT=58;   // 加寬左欄：日常事件名稱改放這裡（不再蓋到各人格子）
+  var GUT=42;   // 左欄只放時間；日常名稱改成往右的浮貼膠囊（見下），不再塞進左欄以免往左突出跑版
   var headRow='<div style="display:flex;padding-left:'+GUT+'px;margin-bottom:5px;">'+PEOPLE.map(function(p){return '<div style="flex:1;min-width:0;display:flex;justify-content:center;">'+badge(p.code,22,outMap[p.id]?"mute":"green")+'</div>';}).join("")+'</div>';
   var pieces="";
-  // 日常事件（準則日常＝板岩灰、臨時不計次＝暖褐，皆中性色、不撞任何勤務色）：整排背景帶畫在最底層（勤務蓋在上面），
-  // 名稱放「左邊時間欄」＝不會遮到各人格子的字。時間畫在格線上、名稱畫在格線下，兩者不撞。
-  var DAILY_RTN="#68727E",DAILY_ADH="#8C7B6A";
-  daily.forEach(function(dv){var top=ax.y(dv.s),acc=(dv.kind==="adhoc")?DAILY_ADH:DAILY_RTN;
-    if(dv.point)pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+top+'px;height:0;border-top:2px dashed '+acc+'8C;z-index:1;"></div>';
-    else{var bh=Math.max(11,ax.y(dv.e)-top);pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+top+'px;height:'+bh+'px;background:'+acc+'22;border-top:2px solid '+acc+'73;z-index:1;"></div>';}
-    pieces+='<div style="position:absolute;left:1px;top:'+(top+2)+'px;width:'+(GUT-5)+'px;text-align:right;font-size:8.5px;font-weight:800;color:'+acc+';line-height:1.15;z-index:3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(dailyShort(dv.text))+'</div>';
+  // 日常事件（準則日常＝靛紫、臨時不計次＝玫紅，鮮豔且做成「膠囊」形狀＝和勤務方塊明顯不同、不混淆）：
+  //  - 背景仍畫淡色帶／虛線標出時段（z1，勤務蓋在上面）。
+  //  - 名稱做成「浮貼膠囊」（帶陰影＝懸浮感），從格線往右放（不進左邊時間欄→不擋時間數字、也不會往左突出跑版）。
+  //  - 多個時間相近的膠囊會自動往右錯開一欄，避免彼此疊在一起。
+  var DAILY_RTN="#4F46E5",DAILY_ADH="#E11D48",chipRows=[],CHIPH=17;
+  daily.slice().sort(function(a,b){return a.s-b.s;}).forEach(function(dv){
+    var acc=(dv.kind==="adhoc")?DAILY_ADH:DAILY_RTN,y=ax.y(dv.s);
+    if(dv.point)pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+y+'px;height:0;border-top:2px dashed '+acc+'55;z-index:1;"></div>';
+    else{var bh=Math.max(10,ax.y(dv.e)-y);pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+y+'px;height:'+bh+'px;background:'+acc+'12;border-top:1.5px solid '+acc+'3A;z-index:1;"></div>';}
+    var top=Math.round(y-CHIPH/2),bot=top+CHIPH,lane=0;   // 膠囊垂直置中在事件起點；相近就往右錯開
+    while((chipRows[lane]||[]).some(function(r){return !(top>r.bot+2||bot<r.top-2);}))lane++;
+    (chipRows[lane]=chipRows[lane]||[]).push({top:top,bot:bot});
+    var tag=(dv.kind==="adhoc")?'<span style="opacity:.85;">臨 </span>':"";
+    pieces+='<div style="position:absolute;left:'+(GUT+4+lane*94)+'px;top:'+top+'px;height:'+CHIPH+'px;display:flex;align-items:center;background:'+acc+';color:#fff;font-size:9px;font-weight:800;padding:0 8px;border-radius:999px;line-height:1;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,.30);z-index:5;">'+tag+esc(dailyShort(dv.text))+'</div>';
   });
   ax.B.forEach(function(m){var yy=ax.y(m);pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+yy+'px;height:1px;background:'+C.line+';opacity:.6;z-index:3;"></div><div style="position:absolute;left:0;top:'+(yy-6)+'px;width:'+(GUT-3)+'px;text-align:right;font-size:9.5px;font-weight:700;color:'+C.sub+';font-variant-numeric:tabular-nums;z-index:3;">'+esc(tlHM(m))+'</div>';});
   PEOPLE.forEach(function(p,ci){var colLeft='calc('+GUT+'px + (100% - '+GUT+'px) * '+ci+' / 8)',colW='calc((100% - '+GUT+'px) / 8)';
@@ -1517,7 +1524,7 @@ function modeC(plan){   // 行程頁：八人時段表（Y=時間、X=8人）＋
     pieces+='<div style="position:absolute;left:'+GUT+'px;right:0;top:'+ny+'px;height:0;border-top:2px solid '+C.red+';z-index:6;"></div>'   // 紅線從格線起（不再蓋到左邊時間欄）
       +'<div style="position:absolute;left:'+(GUT-4)+'px;top:'+(ny-4)+'px;width:8px;height:8px;border-radius:999px;background:'+C.red+';box-shadow:0 0 0 2px '+C.surface+';z-index:7;"></div>'   // 交界紅點
       +'<div style="position:absolute;left:0;top:'+(ny-8)+'px;width:'+(GUT-5)+'px;text-align:right;font-size:9.5px;font-weight:800;color:'+C.red+';font-variant-numeric:tabular-nums;background:'+C.bg+'dd;border-radius:3px;z-index:7;">'+tlHM(now)+'</div>';}   // 左欄紅色現在時間
-  var legend='<div style="font-size:10.5px;color:'+C.sub+';margin-top:7px;line-height:1.7;"><b style="color:'+DAILY_RTN+';">灰帶／虛線</b>＝全班日常（用餐、午休、集合、點名…）；<b style="color:'+DAILY_ADH+';">暖褐</b>＝臨時提醒（不計次）；彩色方塊＝各自勤務（名稱置中）；<b style="color:'+C.red+';">紅線</b>＝現在。</div>';
+  var legend='<div style="font-size:10.5px;color:'+C.sub+';margin-top:7px;line-height:1.7;"><b style="color:'+DAILY_RTN+';">靛紫膠囊</b>＝全班日常（用餐、午休、集合、點名…）；<b style="color:'+DAILY_ADH+';">玫紅・臨</b>＝臨時提醒（不計次）；彩色方塊＝各自勤務（名稱置中）；<b style="color:'+C.red+';">紅線</b>＝現在。</div>';
   return nowLine+headRow+card('<div style="position:relative;height:'+ax.H+'px;">'+pieces+'</div>')+legend;
 }
 function modeA(plan){
