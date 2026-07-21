@@ -56,6 +56,11 @@ var ALLOW_UIDS=["Uc41ec9d3f7cecb8470a9296c17cf775f"];   // 允許編輯的 LINE 
 /* 雲端同步沿用 core.js 的 DEFAULT_SYNC_URL（跟主 App 同一份試算表）。 */
 
 var root=document.getElementById("root");
+var GUIDE=null;   // 行動準據暫存 {date,items,title,wd,raw}（liff-local，不同步）
+
+/* 相對日期：今天/明天/昨天/M/D（用 core 的 todayLabel/addDaysMD/dnum） */
+function relDay(md){md=String(md||"").replace(/[（(].*$/,"");var t=todayLabel();if(md===t)return "今天";if(md===addDaysMD(t,1))return "明天";if(md===addDaysMD(t,-1))return "昨天";return md;}
+function isPastDate(md){md=String(md||"").replace(/[（(].*$/,"");return dnum(md)>0&&dnum(md)<dnum(todayLabel());}   // 昨天以前＝過去（覆蓋前要確認）
 
 /* ---------- liff 專屬畫面片段 ---------- */
 function liffHeader(){
@@ -65,14 +70,20 @@ function liffHeader(){
 }
 function liffSendBar(){
   var n=state.duties.filter(function(d){return !d.removed;}).length;
+  if(state._confirmSend){   // 過去日期→上傳覆蓋前確認
+    var pd=(state.activeDate||"").replace(/[（(].*$/,"");
+    return '<div class="sendbar"><div class="inner"><div style="font-size:12.5px;font-weight:700;color:'+C.red+';margin-bottom:8px;line-height:1.5;">⚠️ 這是 '+esc(pd)+'（過去日期）的公版，發送會覆蓋雲端那天的排班／統計。確定嗎？</div><div style="display:flex;gap:8px;"><button class="btn" data-action="liff-send-cancel" style="flex:1;padding:13px;border-radius:12px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:14px;">取消</button><button class="btn" data-action="liff-send-go" style="flex:2;padding:13px;border-radius:12px;border:none;background:'+C.red+';color:#fff;font-weight:800;font-size:15px;">確定發送</button></div></div></div>';
+  }
   return '<div class="sendbar"><div class="inner"><button class="btn" data-action="liff-send" style="width:100%;padding:15px;border-radius:14px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 6px 16px rgba(42,70,52,.28);">'+icon("check",19,"#fff")+' 發送（'+n+' 項 · 計入統計並傳回聊天室）</button></div></div>';
 }
 function devPaste(){
-  return card(label("〔測試模式〕貼上公版")+'<div style="font-size:11.5px;color:'+C.sub+';margin-top:6px;line-height:1.6;">正式流程是從 LINE bot 帶入公版（?key=）。這個框只在非 LINE 環境出現，方便測解析。</div><textarea data-input="paste" placeholder="貼公版…" style="width:100%;height:140px;margin-top:10px;padding:12px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:13.5px;line-height:1.6;outline:none;resize:vertical;font-family:ui-monospace,Menlo,monospace;">'+esc(typeof pasteText!=="undefined"?pasteText:"")+'</textarea><button class="btn" data-action="liff-devparse" style="width:100%;margin-top:10px;padding:13px;border-radius:11px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:15px;">解析勤務</button>');
+  var isG=(state._type==="guide");
+  return card(label("〔測試模式〕貼上"+(isG?"行動準據":"公版"))+'<div style="font-size:11.5px;color:'+C.sub+';margin-top:6px;line-height:1.6;">正式流程是從 LINE bot 帶入（?key=）。這個框只在非 LINE 環境出現，方便測解析。</div><textarea data-input="paste" placeholder="貼'+(isG?"行動準據":"公版")+'…" style="width:100%;height:140px;margin-top:10px;padding:12px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:13.5px;line-height:1.6;outline:none;resize:vertical;font-family:ui-monospace,Menlo,monospace;">'+esc(typeof pasteText!=="undefined"?pasteText:"")+'</textarea><button class="btn" data-action="liff-devparse" style="width:100%;margin-top:10px;padding:13px;border-radius:11px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:15px;">解析'+(isG?"準據":"勤務")+'</button>');
 }
 
 /* ---------- liff 專屬 render（覆蓋 core 沒有的頁面組合；render 為每頁各自定義） ---------- */
 function render(){
+  if(state._mode==="guide"){renderGuide();return;}   // 行動準據上傳模式
   refreshHist();
   var h=liffHeader();
   if(state._err){root.innerHTML=h+card('<div style="color:'+C.red+';font-weight:700;font-size:14px;">'+esc(state._err)+'</div>');return;}
@@ -107,11 +118,73 @@ function applyGongban(text){
   render();
 }
 
+/* ========== 行動準據上傳模式 ========== */
+function applyGuide(text){
+  text=String(text||"");
+  var r=parseSched(text);
+  var pd=extractDate(text)||todayLabel();
+  var pwm=text.match(/[（(]([一二三四五六日])[)）]/);
+  GUIDE={date:pd,items:r.items,title:r.title,wd:pwm?pwm[1]:"",raw:text};
+  state._mode="guide";
+  if(!r.items.length)flash("沒抓到時間點，確認是行動準據格式");
+  render();
+}
+function guideHeader(){
+  var lab=GUIDE?relDay(GUIDE.date):"";
+  return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div style="width:34px;height:34px;border-radius:10px;background:'+C.brass+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;">'+icon("clock",18,"#fff")+'</div><div style="min-width:0;"><div style="font-size:17px;font-weight:800;">行動準據'+(GUIDE?'　<span style="font-size:13px;color:'+C.sub+';font-weight:700;">'+esc(GUIDE.date)+(GUIDE.wd?("（"+esc(GUIDE.wd)+"）"):"")+'</span>':"")+'</div><div style="font-size:11.5px;color:'+C.sub+';">上傳雲端，用 App 打開就有這天的準據</div></div></div>';
+}
+function renderGuide(){
+  var head=guideHeader();
+  if(state._err){root.innerHTML=head+card('<div style="color:'+C.red+';font-weight:700;font-size:14px;">'+esc(state._err)+'</div>');return;}
+  if(!GUIDE){root.innerHTML=head+(state._dev?devPaste():card('<div style="text-align:center;color:'+C.sub+';font-size:13.5px;padding:30px 12px;">載入準據中…</div>'));if(focusEl){var e0=root.querySelector('[data-input="'+focusEl+'"]');if(e0)e0.focus();focusEl=null;}return;}
+  var timed=GUIDE.items.filter(function(it){return it.time;}).length;
+  var rows=GUIDE.items.slice(0,40).map(function(it){
+    return '<div style="display:flex;gap:10px;align-items:baseline;padding:5px 2px;border-bottom:1px solid '+C.line+';"><span style="flex:0 0 74px;font-variant-numeric:tabular-nums;font-weight:800;font-size:12.5px;color:'+(it.time?C.greenDeep:C.sub)+';">'+esc(it.time?fmtSpan(it.range):"—")+'</span><span style="flex:1;font-size:13px;color:'+C.ink+';line-height:1.5;">'+esc(it.text||"")+'</span></div>';
+  }).join("");
+  var preview=card(label("解析結果（"+timed+" 個時段）")+'<div style="margin-top:8px;max-height:46vh;overflow-y:auto;">'+rows+(GUIDE.items.length>40?'<div style="font-size:11.5px;color:'+C.sub+';padding:6px 2px;">…共 '+GUIDE.items.length+' 項</div>':"")+'</div>');
+  var past=isPastDate(GUIDE.date);
+  var warn=past?'<div style="background:'+C.redSoft+';border:1px solid '+C.red+';border-radius:11px;padding:10px 13px;margin-bottom:12px;font-size:12.5px;font-weight:700;color:'+C.red+';line-height:1.5;">⚠️ 這是 '+esc(GUIDE.date)+'（過去日期）的準據，班長可能傳錯日期。上傳會覆蓋雲端那天既有的準據，請確認。</div>':"";
+  var h=head+warn+preview;
+  if(!state.readOnly)h+=guideUploadBar(past);
+  else h+='<div style="margin-top:14px;font-size:12.5px;color:'+C.amber+';font-weight:700;">你不在編輯名單，只能看不能上傳。</div>';
+  root.innerHTML=h;
+  if(focusEl){var el=root.querySelector('[data-input="'+focusEl+'"]');if(el)el.focus();focusEl=null;}
+}
+function guideUploadBar(past){
+  if(state._uploaded)return '<div class="sendbar"><div class="inner"><div style="text-align:center;padding:13px;font-size:14.5px;font-weight:800;color:'+C.green+';">'+icon("check",18,C.green)+' 已上傳，用 App 打開 '+esc(GUIDE.date)+' 就有了</div></div></div>';
+  if(state._confirmUpload){
+    return '<div class="sendbar"><div class="inner"><div style="font-size:12.5px;font-weight:700;color:'+C.red+';margin-bottom:8px;">確定上傳 '+esc(GUIDE.date)+'（過去日期）並覆蓋雲端那天的準據？</div><div style="display:flex;gap:8px;"><button class="btn" data-action="liff-guide-cancel" style="flex:1;padding:13px;border-radius:12px;border:1px solid '+C.line+';background:'+C.surface+';color:'+C.sub+';font-weight:700;font-size:14px;">取消</button><button class="btn" data-action="liff-guide-upload-go" style="flex:2;padding:13px;border-radius:12px;border:none;background:'+C.red+';color:#fff;font-weight:800;font-size:15px;">確定上傳</button></div></div></div>';
+  }
+  return '<div class="sendbar"><div class="inner"><button class="btn" data-action="liff-guide-upload" style="width:100%;padding:15px;border-radius:14px;border:none;background:'+(past?C.red:C.brass)+';color:#fff;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 6px 16px rgba(169,121,63,.28);">'+icon("check",19,"#fff")+' 上傳 '+esc(GUIDE.date)+' 行動準據</button></div></div>';
+}
+function uploadGuide(force){
+ try{
+  if(state.readOnly){flash("你不在編輯名單，無法上傳");return;}
+  var g=GUIDE;if(!g||!g.items.length){flash("沒有可上傳的準據");return;}
+  var pd=g.date.replace(/[（(].*$/,"");
+  if(isPastDate(pd)&&!force){state._confirmUpload=true;render();return;}   // 過去日期先確認
+  // 資料安全：一定要 pull 過（拿到那天雲端最新的 board）才准 push，否則可能用空的覆蓋掉已排勤務
+  if(!pulledOk){flash("讀取雲端中…請 2 秒後再按一次");pullSync();return;}
+  var sched={raw:g.raw,items:g.items,title:g.title,loaded:!!g.items.length,date:g.date};
+  var b=state.boards[pd];
+  if(b){b.schedule=sched;if(g.wd&&!b.wd)b.wd=g.wd;b.ts=Date.now();}   // 只改 schedule 欄位，保留既有 duties/committed
+  else{state.boards[pd]={raw:"",meta:[],duties:[],schedule:sched,committed:false,wd:g.wd||"",imported:false,ts:Date.now()};}
+  if(state.activeDate===pd)state.schedule=sched;
+  state._confirmUpload=false;state._uploaded=true;
+  persistLocal();pushSync();
+  flash("已上傳 "+pd+" 行動準據到雲端");
+  render();
+ }catch(err){flash("上傳出錯："+((err&&err.message)||String(err)));try{console.error("uploadGuide error:",err);}catch(_){}}
+}
+
 /* ---------- 發送：計入統計＋上雲＋傳回聊天室 ---------- */
 function liffSend(){
  try{
   if(state.readOnly){flash("你不在編輯名單，無法發送");return;}
   if(!state.duties.filter(function(d){return !d.removed;}).length){flash("還沒有勤務可發送");return;}
+  var pd=(state.activeDate||"").replace(/[（(].*$/,"");
+  if(pd&&isPastDate(pd)&&!state._confirmSend){state._confirmSend=true;render();return;}   // 過去日期→覆蓋前確認
+  state._confirmSend=false;
   commit();                       // core：計入統計（同天覆蓋只算一次）＋ savePlan/saveBoard ＋ persist 上雲
   var filled=buildFilled();
   // M5 之後：這裡也會把 filled/個人分工存進雲端 texts[日期]，給未來 bot 指令用
@@ -149,7 +222,12 @@ function liffClick(e){
   var el=e.target.closest?e.target.closest("[data-action]"):null;if(!el)return;
   var a=el.getAttribute("data-action");
   if(a==="liff-send"){liffSend();return;}
-  if(a==="liff-devparse"){applyGongban(typeof pasteText!=="undefined"?pasteText:"");return;}
+  if(a==="liff-send-go"){state._confirmSend=true;liffSend();return;}
+  if(a==="liff-send-cancel"){state._confirmSend=false;render();return;}
+  if(a==="liff-guide-upload"){uploadGuide(false);return;}
+  if(a==="liff-guide-upload-go"){uploadGuide(true);return;}
+  if(a==="liff-guide-cancel"){state._confirmUpload=false;render();return;}
+  if(a==="liff-devparse"){var pt=(typeof pasteText!=="undefined"?pasteText:"");if(state._type==="guide")applyGuide(pt);else applyGongban(pt);return;}
   handle(a,el);   // pick / auto / tl-open / count-inc / set-time / af-* … 全部共用 core 事件層
 }
 root.addEventListener("click",liffClick);
@@ -157,15 +235,18 @@ overlay.addEventListener("click",liffClick);
 root.addEventListener("input",onInput);
 overlay.addEventListener("input",onInput);
 
-/* ---------- 取公版：?raw=（測試用，直接帶原文） 或 ?key=（正式，跟 webhook 拿） ---------- */
-function loadGongban(key,raw){
-  if(raw){applyGongban(decodeURIComponent(raw));return;}
+/* ---------- 取原文：?raw=（測試用，直接帶原文） 或 ?key=（正式，跟 webhook 拿）；type=gongban|guide ---------- */
+function dispatchText(text){ if(state._type==="guide")applyGuide(text); else applyGongban(text); }
+function loadContent(key,raw,type){
+  state._type=type||"gongban";
+  if(raw){dispatchText(decodeURIComponent(raw));return;}
   if(key&&GONGBAN_FETCH_URL){
     fetch(GONGBAN_FETCH_URL+(GONGBAN_FETCH_URL.indexOf("?")>=0?"&":"?")+"key="+encodeURIComponent(key))
       .then(function(r){return r.text();})
       .then(function(t){var o=null;try{o=JSON.parse(t);}catch(e){}var text=(o&&o.text)||"";
-        if(text)applyGongban(text);else{state._err="雲端找不到這份公版（key 可能過期，請回聊天室重點按鈕）";render();}})
-      .catch(function(){state._err="抓公版失敗，檢查網路後回聊天室重點按鈕";render();});
+        state._type=type||(o&&o.type)||"gongban";   // URL 沒帶 type 就用 webhook 回的 type
+        if(text)dispatchText(text);else{state._err="雲端找不到這份資料（key 可能過期，請回聊天室重點按鈕）";render();}})
+      .catch(function(){state._err="抓資料失敗，檢查網路後回聊天室重點按鈕";render();});
     return;
   }
   state._dev=true;render();   // 沒 key 沒 raw → 測試模式，顯示貼上框
@@ -174,7 +255,7 @@ function loadGongban(key,raw){
 /* ---------- 啟動 ---------- */
 function boot(){
   var params={};(location.search||"").replace(/^\?/,"").split("&").forEach(function(kv){if(!kv)return;var p=kv.split("=");params[decodeURIComponent(p[0])]=decodeURIComponent((p[1]||"").replace(/\+/g," "));});
-  var key=params.key||"",raw=params.raw||"";
+  var key=params.key||"",raw=params.raw||"",type=params.type||"";
   // 先連雲端（資料安全：pull 過才准 push）
   if(state.syncUrl){state.syncStatus="sync";pullSync();startPoll();}
   if(LIFF_ID&&window.liff){
@@ -182,10 +263,10 @@ function boot(){
       state._uid=p.userId;
       var allowed=(!ALLOW_UIDS.length)||ALLOW_UIDS.indexOf(p.userId)>=0;
       state.readOnly=!allowed;
-      loadGongban(key,raw);
-    }).catch(function(){state.readOnly=false;loadGongban(key,raw);});   // 外部瀏覽器等初始化失敗→當測試
+      loadContent(key,raw,type);
+    }).catch(function(){state.readOnly=false;loadContent(key,raw,type);});   // 外部瀏覽器等初始化失敗→當測試
   }else{
-    state.readOnly=false;loadGongban(key,raw);
+    state.readOnly=false;loadContent(key,raw,type);
   }
 }
 render();   // 先畫一次（載入中）

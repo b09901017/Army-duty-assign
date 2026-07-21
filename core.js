@@ -117,6 +117,7 @@ var state={
   tomb:(saved&&saved.tomb)||{},tombIds:(saved&&saved.tombIds)||{},wipe:(saved&&saved.wipe)||0,stateTs:(saved&&saved.stateTs)||0,
   evtForm:{id:null,md:"",label:"",range:"",group:"公差",people:[],keepAll:false},
   boards:(saved&&saved.boards)?saved.boards:{},
+  texts:(saved&&saved.texts)?saved.texts:{},   // 每天產好的字串 texts[日期]={filled:填好公版, persons:個人分工, ts}；給 LINE bot 查詢用
   activeDate:(saved&&saved.activeDate)?saved.activeDate:"",
   boardMode:"edit",boardOpen:false,boardView:"list",tlFree:null,tlCluster:null,tlRest:null,
   boardOthersOpen:false,daysOpen:false,guardTallyOpen:false,
@@ -135,7 +136,7 @@ function saveGuardWeek(){if(!state.guard||!state.guard.loaded||!(state.guard.day
 function loadGuardWeek(key){saveGuardWeek();var w=state.guardWeeks[key];if(!w)return false;state.guard={raw:w.raw||"",meta:w.meta||[],days:w.days||[],loaded:true,committed:!!w.committed};state.activeGuardWeek=key;return true;}
 function guardWeekList(){return Object.keys(state.guardWeeks).sort(function(a,b){return dnum(b)-dnum(a);});}   // 最近的週在前
 function guardWeekLabel(w){var d=(w&&w.days)||[];if(!d.length)return "?";var a=d[0].date||"",b=d[d.length-1].date2||d[d.length-1].date||"";return a+(b&&b!==a?("–"+b):"");}
-function persistLocal(){try{saveBoard();saveGuardWeek();localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardWeeks:state.guardWeeks,activeGuardWeek:state.activeGuardWeek,guardTally:state.guardTally,schedule:state.schedule,plans:state.plans,absence:state.absence,boards:state.boards,activeDate:state.activeDate,tomb:state.tomb,tombIds:state.tombIds,wipe:state.wipe,stateTs:state.stateTs}));}catch(e){}}
+function persistLocal(){try{saveBoard();saveGuardWeek();localStorage.setItem(STORE_KEY,JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardWeeks:state.guardWeeks,activeGuardWeek:state.activeGuardWeek,guardTally:state.guardTally,schedule:state.schedule,plans:state.plans,absence:state.absence,boards:state.boards,texts:state.texts,activeDate:state.activeDate,tomb:state.tomb,tombIds:state.tombIds,wipe:state.wipe,stateTs:state.stateTs}));}catch(e){}}
 function persist(){state.stateTs=Date.now();dirty=true;persistLocal();pushSync();}
 var SYNC_KEY="duty-sync-url",pushT=null,lastPushAt=0,pollTimer=null,pulledOk=false,pendingPush=false,dirty=false;
 function slimBoards(){
@@ -147,7 +148,7 @@ function slimBoards(){
   }
   return out;
 }
-function payload(){return JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardWeeks:state.guardWeeks,guardTally:state.guardTally,plans:state.plans,absence:state.absence,boards:slimBoards(),tomb:state.tomb,tombIds:state.tombIds,wipe:state.wipe,stateTs:state.stateTs});}
+function payload(){return JSON.stringify({names:state.names,log:state.log,mealQueue:state.mealQueue,guard:state.guard,guardWeeks:state.guardWeeks,guardTally:state.guardTally,plans:state.plans,absence:state.absence,boards:slimBoards(),texts:state.texts,tomb:state.tomb,tombIds:state.tombIds,wipe:state.wipe,stateTs:state.stateTs});}
 /* ---------- 合併（逐日，不整塊覆蓋）----------
    規則：同一天取「後修改的」；刪除靠墓碑 tomb[日期]=時間；清空統計靠 wipe=時間。
    這樣某支裝置資料不全時，只會補上、不會把別人的歷史削掉。 */
@@ -216,6 +217,20 @@ function mergePlans(rem,tomb,wipe){
   }
   return out;
 }
+function mergeTexts(rem,tomb,wipe){   // 逐日取 ts 較新者＋看墓碑（比照 mergePlans）；texts[日期]={filled,persons,ts}
+  var out={},keys={},d;
+  for(d in state.texts)keys[d]=1;
+  for(d in (rem||{}))keys[d]=1;
+  for(d in keys){
+    var loc=state.texts[d],r=(rem||{})[d];
+    var lts=(loc&&loc.ts)||0,rts=(r&&r.ts)||0;
+    var win=(!loc)?r:(!r)?loc:(rts>lts?r:loc);
+    if(!win)continue;
+    if(killed(d,Math.max(lts,rts),tomb,wipe))continue;   // 這天被刪／統計被清空就別留
+    out[d]=win;
+  }
+  return out;
+}
 function syncBadge(){var el=document.getElementById("syncdot");if(el)el.style.background=state.syncStatus==="on"?C.green:state.syncStatus==="err"?C.red:C.line;}
 function pushNow(){
   if(state.readOnly){flash("唯讀模式無法上傳");return;}
@@ -243,8 +258,8 @@ function pushSync(){
 function applyRemote(o){
   if(!o||!o.names)return false;
   var tomb=mergeTomb(o.tomb),tids=mergeIds(o.tombIds),wipe=Math.max(state.wipe||0,o.wipe||0);
-  var nb=mergeBoards(o.boards,tomb,wipe),nl=mergeLog(o.log,tomb,wipe,tids),np=mergePlans(o.plans,tomb,wipe),ngw=mergeGuardWeeks(o.guardWeeks,o.guard);
-  var cur=JSON.stringify({names:state.names,l:state.log,p:state.plans,t:state.tomb,w:state.wipe,b:slimBoards(),mq:state.mealQueue,g:state.guard,gw:state.guardWeeks,gt:state.guardTally,ab:state.absence});
+  var nb=mergeBoards(o.boards,tomb,wipe),nl=mergeLog(o.log,tomb,wipe,tids),np=mergePlans(o.plans,tomb,wipe),ngw=mergeGuardWeeks(o.guardWeeks,o.guard),nt=mergeTexts(o.texts,tomb,wipe);
+  var cur=JSON.stringify({names:state.names,l:state.log,p:state.plans,t:state.tomb,w:state.wipe,b:slimBoards(),mq:state.mealQueue,g:state.guard,gw:state.guardWeeks,gt:state.guardTally,ab:state.absence,tx:state.texts});
   state.names=o.names;
   // 排休／站哨／打飯順序這幾項是整份存的，沒有逐日時間戳。
   // 只有在「雲端比較新」而且「本機沒有還沒上傳的修改」時才套用，否則會蓋掉你剛排好的東西。
@@ -255,7 +270,7 @@ function applyRemote(o){
     if(o.absence)state.absence=o.absence;
     state.stateTs=o.stateTs||state.stateTs;
   }
-  state.log=nl;state.plans=np;state.tomb=tomb;state.tombIds=tids;state.wipe=wipe;state.boards=nb;state.guardWeeks=ngw;
+  state.log=nl;state.plans=np;state.tomb=tomb;state.tombIds=tids;state.wipe=wipe;state.boards=nb;state.guardWeeks=ngw;state.texts=nt;
   // 站哨 active 週跟著逐週合併結果走（沒有本機未上傳的修改時）；新裝置沒 active 又還沒排過 → 自動載入最新一週
   var agk=state.activeGuardWeek;
   if(!agk&&!(state.guard&&state.guard.loaded)){var wl=guardWeekList();if(wl.length)agk=state.activeGuardWeek=wl[0];}
@@ -266,7 +281,7 @@ function applyRemote(o){
   if(b){state.gongban={raw:b.raw||"",meta:b.meta||[],loaded:true};state.duties=b.duties;if(b.schedule&&b.schedule.items.length)state.schedule=b.schedule;}
   else if(ad){state.activeDate="";state.gongban={raw:"",meta:[],loaded:false};state.duties=[];}
   syncAvail();   // 排休是資料，出勤是派生值 → 拉到新資料後要重算，否則看起來像沒存到
-  var now=JSON.stringify({names:state.names,l:state.log,p:state.plans,t:state.tomb,w:state.wipe,b:slimBoards(),mq:state.mealQueue,g:state.guard,gw:state.guardWeeks,gt:state.guardTally,ab:state.absence});
+  var now=JSON.stringify({names:state.names,l:state.log,p:state.plans,t:state.tomb,w:state.wipe,b:slimBoards(),mq:state.mealQueue,g:state.guard,gw:state.guardWeeks,gt:state.guardTally,ab:state.absence,tx:state.texts});
   if(now===cur)return false;
   persistLocal();return true;
 }
@@ -629,6 +644,7 @@ function commit(){
     mealPpl.forEach(function(pid){var i=state.mealQueue.indexOf(pid);if(i>=0){state.mealQueue.splice(i,1);state.mealQueue.push(pid);}});
   }
   saveBoard();if(state.boards[date])state.boards[date].committed=true;
+  try{state.texts[dk]={filled:buildFilled(),persons:buildPersonList(),ts:Date.now()};}catch(e){}   // M5：把填好公版/個人分工字串也存起來（上雲給 LINE bot 查詢用）
   persist();
   flash("已更新統計與行程（"+date+"）");render();
 }
@@ -662,6 +678,7 @@ function delDayAll(date){
   state.log=state.log.filter(function(e){return String(e.id)!==lid&&!(isExtra(e)&&String(e.date).replace(/[（(].*$/,"")===md);});
   if(state.plans[md])delete state.plans[md];
   if(state.boards[md])delete state.boards[md];
+  if(state.texts[md])delete state.texts[md];   // M5：連同存好的字串一起刪（墓碑會擋合併復活）
   if(state.activeDate===md){state.activeDate="";state.gongban={raw:"",meta:[],loaded:false};state.duties=[];state.boardOpen=false;}
   if(state.dayView.date===md)state.dayView.date="";
   state.confirmDelDay="";

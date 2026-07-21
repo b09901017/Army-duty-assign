@@ -138,12 +138,45 @@ git checkout <工作分支>
 
 ## 七、尚未做／未來（接手可挑）
 
-1. **M5（前瞻，還沒做）**：liff `commit`／`發送` 時，把 `buildFilled()`／`buildPersonList()` 產生的**文字字串**也存進雲端（每天一份，例如 payload 加 `texts[日期]={filled,persons}`）。目的：未來 bot 指令「給我 7/21 公版/分工」時直接讀存好的字串吐回去，不用把排版邏輯移植到 `.gs`。
-   - **刻意先不做**：因為要動 `payload/applyRemote`（v4 血淚的同步核心），且要照 v8 第四節「存/傳/併/推」四步。等基本流程長期穩定再做。
-2. **M6（未來）**：line_webhook.gs 加指令解析——你傳「7/21 分工」→ 讀雲端 `texts["7/21"].persons` → reply。靠 M5 鋪好的字串。
-3. liff「發送」目前只送**填好公版**一則；未來可加送**個人分工**（`buildPersonList()`）第二則。
-4. `ALLOW_UIDS` 目前寫死在 liff.html（client）＋ Script Properties（server）兩處，加人要兩邊改。
-5. v4/v8 的老待辦仍在：整份欄位（names/absence/mealQueue/guardTally/guard）無逐項 ts、raw 原文不同步、站哨自動分配不看排休、`.gs` rebuild 凍結列權限例外等。
+1. ✅ **M5 已完成**（見第九節）：payload 加 `texts[日期]={filled,persons,ts}`。
+2. ✅ **M6 已完成**（見第九節）：webhook 區分公版/準據 + 查詢指令。
+3. **行動準據上傳已完成**（見第九節）：傳準據給 bot → LIFF 上傳到 `boards[日期].schedule`。
+4. liff「發送」目前只送**填好公版**一則；未來可加送**個人分工**（`buildPersonList()`）第二則。
+5. `ALLOW_UIDS` 目前寫死在 liff.html（client，只防手滑）＋ Script Properties（server，真防線）兩處，加人要兩邊改。
+6. v4/v8 的老待辦仍在：整份欄位（names/absence/mealQueue/guardTally/guard）無逐項 ts、raw 原文不同步、站哨自動分配不看排休、`.gs` rebuild 凍結列權限例外等。
+
+## 九、v9 追加：texts 字串上雲(M5) + 行動準據上傳 + bot 查詢/分類(M6)
+
+> 這節是 v9 主結構完成、LINE 一條龍跑通後追加的三個功能。**動到了 `payload/applyRemote`（v4 同步核心），照 v8 第四節「存/傳/併/推」四步做，沒退回任何保護。**
+
+### (1) M5：`state.texts[日期]={filled,persons,ts}` 上雲（core.js）
+- **用途**：把每天「填好的公版」`buildFilled()` 與「個人分工」`buildPersonList()` 產生的**文字字串**存進雲端，給 LINE bot 查詢用（M6），不用把排版邏輯移植到 `.gs`。
+- **四步**：存（persistLocal 加 texts）、傳（payload 加 texts）、併（applyRemote 加 `mergeTexts`——逐日取 ts 較新者＋看墓碑/wipe，比照 mergePlans；cur/now 變更偵測快照也納入 `tx`）、推（`commit()` 寫入 `state.texts[dk]` 後走既有 persist）。`delDayAll` 一併刪 texts[md]。
+- **主 App 零影響**：texts 是資料、不進 render。等價性測試（render/nav/parseGongban 逐字元不變）通過。
+- ⚠️ 加了 texts 後，「原始單檔 vs core.js」的**整份 state 等價**不再成立（多了 texts 欄位）——改用「render/nav/parseGongban 不變」來驗主 App 行為，別再拿整份 state 比。
+
+### (2) 行動準據上傳（liff.html，`?type=guide`）
+- 傳「行動準據」給 bot → Flex「上傳 X/X 準據」→ 開 `liff.html?key=xxx&type=guide`。
+- liff `applyGuide`＝`parseSched` 解析 → 預覽時段清單 →「上傳」鈕。
+- **`uploadGuide` 只改 `boards[pd].schedule` 欄位、完整保留既有 `duties/committed`**（避免洗掉排班）。沒 board 的日子建 schedule-only board。上傳後主 App 打開那天就有準據。
+- **資料安全**：上傳前 `if(!pulledOk)` 擋住（pull 過才准 push）——**這條很關鍵**：沒 pull 到雲端最新那天 board 就上傳，會用本機空的覆蓋掉已排 duties。務必保留。
+
+### (3) 日期確認（公版 send／準據 upload 都適用）
+- **今天/明天/未來 → 直接放行**；**昨天以前（過去）→ 覆蓋前跳兩段式確認**（班長常傳錯日期，避免覆蓋既有排班/準據）。
+- 判斷用 `isPastDate(md)=dnum(md)<dnum(todayLabel())`。確認 UI：`state._confirmSend`（公版）、`state._confirmUpload`（準據）。
+
+### (4) M6：webhook 分類 + 查詢（line_webhook.gs）
+- **`classifyText_`**：`🔷`/標題含「勤務」→ 公版；含「行動準據」/時間軸行計分 → 準據；都不像 → unknown。**用 `data/` 26 個真實範例測，26/26 全對。** 改判斷邏輯務必回歸跑這個。
+- 準據存 inbox `type=guide`、回古銅色 Flex「上傳」；公版回墨綠 Flex「排班」。按鈕帶相對日期。
+- **inbox 加第 5 欄 type**；`doGet` 回 `{text,type}`（舊列無 type→預設 gongban）。
+- **查詢指令 `tryQuery_`**：單行含「公版/分工」→ `syncData_()` 讀 sync 試算表 `data` 分頁分片 JSON（比照 sync 的 `read_` 串接 A1..A30）→ 取 `texts[日期].filled/persons` 回文字。多行原文不誤判為查詢。`help/指令` 有說明。
+- **前提**：texts 要 App 端（M5 已部署）排好按發送才會有；webhook 的 `SHEET_ID` 指向同一份試算表才讀得到。
+- ⚠️ 改 `.gs` 後**使用者要重新部署**（貼新碼→新版本→部署）才生效。
+
+### 測試
+- core M5：主 App render 不變＋texts commit/payload/mergeTexts（取新/補缺/墓碑）全過。
+- liff：準據/公版 × 過去/未來日期的確認流程、`uploadGuide` 保留既有 duties、texts 連動；Chromium 實截準據上傳頁。
+- webhook：node --check、`classifyText_` 26/26、查詢判斷 fallback edge case。
 
 ---
 
