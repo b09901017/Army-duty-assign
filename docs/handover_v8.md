@@ -1,4 +1,6 @@
-# 261 排勤務板 — 交接說明 v8（對應 index.html ≈ v40 · Apps Script v3 未動）
+# 261 排勤務板 — 交接說明 v8（對應 index.html ≈ v41 · Apps Script v3 未動）
+
+> 本檔一～六節是「資料同步 bug 修復」；第七節是之後追加的「UIUX 優化」（純畫面）。
 
 給下一個 AI：**先讀 v4（資料模型／雲端同步／資料安全的權威版本）＋ v6（時間軸）＋ v7（站哨多週、跨夜哨、解析自動填名字），再讀本檔。** v8 是**資料同步 bug 修復**，動到 `curDate/livePlan/sparse/pushNow`，但**沒有退回 v4 第七節任何保護**（逐日合併＋墓碑、pull 過才准 push、`remoteNewer&&!dirty` 才套整份欄位，全部原封不動）。
 
@@ -91,3 +93,37 @@
 - 改完先 `node --check`（抽 `<script>`）。功能測照 v4 第九節 stub 環境；本次另用**使用者真實雲端 payload**（試算表 data 分頁匯出、A 欄分片重組成 JSON）跑 `curDate`/四頁 render/臨時行程對天，共 12 項核心斷言全過。
 - 動同步／資料安全 → v4 第七節＋本檔第三、四節。
 - 目前 **index.html ≈ v40、Apps Script v3（分片，未動）**。
+
+---
+
+## 七、v8 之後追加：UIUX 優化（純畫面，不動資料層）（index.html ≈ v41）
+
+使用者提的 4 點介面優化，**全部只動 render/CSS，沒碰資料模型、同步、解析**。改完用預裝 Chromium（`/opt/pw-browsers/chromium_headless_shell-1194`）+ playwright-core 實際載入真實雲端 state 截四張圖人工確認版面。
+
+### (1) 行程頁八人時段表（`modeC`）日常事件太不明顯 → 重新設計
+- 舊：日常事件（起床/用餐/午休…）畫成 8px 淡灰字、z-index 2（**在勤務方塊下面 z4**）→ 有勤務的地方就被蓋住，幾乎看不到。
+- 新：
+  - 把 `daily` 分兩類並上不同色：**準則來的日常＝古銅 `C.brass`（`kind:"routine"`）**、**沒排人的臨時事件(不計次)＝靛藍 `#4E6E8E`（`kind:"adhoc"`）**（在 line 1488/1489 push 時加 `kind`）。
+  - 標籤改成**白字色籤**（accent 底、白字、9px 800、左上角圓角、帶陰影），**z-index 5＝提到勤務方塊(z4)之上**，所以一定看得到。
+  - 色帶 fill 加深（`acc+'1C'`）、上緣 2px 實線（段）／2px 虛線（點）。
+- 底部圖例改寫，標明古銅=日常、靛藍=臨時提醒、紅線=現在。
+
+### (2) `modeC` 現在紅線跑版＋現在時間不明顯 → 修
+- 舊：紅線 `left:0;right:0`（**橫跨左邊時間欄**）＝跑版；且線上沒有時間。
+- 新：紅線改 `left:GUT(34)` **從格線起**、交界一顆紅點（`box-shadow` 白邊）、左邊時間欄顯示**紅色現在時間**（`tlHM(now)`，帶半透明底避免疊字）；z-index 6/7 在最上層。summary 那行「現在 HH:MM」保留。
+
+### (3) 排班頁「閱讀模式：可看不可改…」banner 上下太擠 → 間距一致
+- 根因：open-board 分支裡，banner 下面的「已解析 N 項」收合條（`pasteCard()` 那條綠 bar）**沒有 margin-top**，跟 banner flush 貼住。
+- 修：給那條綠 bar 加 `margin-top:12px`（和其他卡片一致）；banner padding `9px 13px`→`12px 14px`、圓角 11→12。上下就都是 12px 了。
+
+### (4) 排班頁時間軸（`boardTimeline`）長名稱放不下、沒顯示人名 → 截斷＋固定顯示人名＋加寬
+- 根因：方塊標題用 `word-break:break-all`（**長名稱會一直換行**），把下面的人名那行擠出去，加上方塊 `overflow:hidden` → 人名被裁掉不見。
+- 修：
+  - 標題改**單行 `white-space:nowrap;overflow:hidden;text-overflow:ellipsis`**＋`flex:1;min-width:0`（配右上角人數/×N 角標）→ 太長就顯示「取裝2個人帶桌...」。
+  - 人名那行（`sub`）同樣單行 ellipsis，**一定顯示在下面**。
+  - 欄位加寬：`wide` 門檻 `lc>6`→`lc>3`、固定欄寬 `96`→`LANEW=132`；≥4 欄就固定寬＋**左右捲**（外層本來就 `overflow-x:auto`），名稱放得下。方塊最小高度 `38→44`（`tentative 24→28`）給名稱＋人名喘息空間（不會撞到同欄下一塊，因為 `tlAxis` 每段 ≥MIN46）。
+
+### 測試
+- `node --check` 過；node harness 驗證 `boardTimeline`/`modeC`/四頁 render 不炸，且時間軸方塊含 `text-overflow:ellipsis`、長名稱字串在、人名(short2)有進 sub、寬欄 132 有觸發；modeC 日常色籤 z5、靛藍 `#4E6E8E`、紅線從 GUT 起。
+- Chromium 實截：排班時間軸（窄/寬視窗都確認長名稱截斷＋人名顯示）、八人時段表（日常古銅籤醒目、7/21 紅線 02:18 對齊、臨時提醒）、閱讀 banner 間距。
+- **目前 index.html ≈ v41、Apps Script v3（未動）。**
