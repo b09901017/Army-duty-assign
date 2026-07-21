@@ -198,8 +198,11 @@
 4. **M4**：接上雲＋計入統計＋「發送」`liff.sendMessages`；手機實測整條龍。
    - ✅ **已完成、手機實測整條龍成功**（轉傳公版→跳按鈕→開 LIFF→解析排人→發送回聊天室轉傳）。
    - 施工中修的坑（詳見 §11 與 `line-qa.md`）：Pages 網址大小寫、東西沒 merge 進 main、Apps Script 授權、whoami 沒回應、**`liff.isApiAvailable("sendMessages")` 丟 `unexpected api name`（已改成不用它、直接 try/catch 呼叫 sendMessages）**。
-5. **M5**（前瞻，**尚未做**）：commit/發送 時把 `buildFilled/buildPersonList` 字串存進雲端 `texts[日期]`，為未來 bot 指令鋪路。刻意先不做——要動 `payload/applyRemote` 同步核心，等基本流程長期穩定再做（見 handover_v9 第七節）。
-6. **M6**（未來，可延後）：bot 指令「給我某天公版／分工」，靠 M5 存的字串。
+5. **M5**：commit/發送 時把 `buildFilled/buildPersonList` 字串存進雲端 `texts[日期]`。
+   - ✅ **已完成**（照 v8 四步；主 App render 零變化；mergeTexts 逐日 ts＋墓碑）。細節見 handover_v9 第九節 (1)。
+6. **M6**：bot 指令「給我某天公版／分工」，靠 M5 存的字串。
+   - ✅ **已完成**：`classifyText_`（公版/準據 26/26 全對）、查詢 `tryQuery_` 讀 sync data 分片、行動準據上傳（`?type=guide`，只改 boards[pd].schedule 保留 duties）、公版/準據過去日期確認。細節見 handover_v9 第九節。
+   - ⚠️ 使用者要**重新部署 Apps Script**（貼新碼→新版本→部署）＋把 core.js/liff.html merge 到 main 上線，M5/M6 才會實際生效。
 
 ## 11. 施工中踩到的坑（實測後補記）
 
