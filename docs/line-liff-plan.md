@@ -92,7 +92,7 @@
 
 ### 4-2. 建 LIFF app
 1. 同一個 channel → **LIFF** 分頁 → Add。
-2. **Endpoint URL** = `https://{你的帳號}.github.io/army-duty-assign/liff.html`
+2. **Endpoint URL** = `https://b09901017.github.io/Army-duty-assign/liff.html`（注意大小寫要跟 repo 名稱 `Army-duty-assign` 一致，GitHub Pages 網址對大小寫敏感，這裡填錯是實測踩到的第一個坑）
 3. **Size** 選 `Full`。
 4. 勾 **scope**：`profile`（拿 userId 做白名單）、`chat_message.write`（`liff.sendMessages` 要用）。
 5. 開 **Bot link feature**（讓 LIFF 能送訊息回聊天室）。
