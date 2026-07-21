@@ -185,6 +185,12 @@
    - **等價性測試通過**：同一 stub 環境跑「原始單檔」vs「core.js＋inline」，`state`／`render` 的 root/nav HTML／`parseGongban` 結果**逐字元相同**。
    - ⚠️ **之後編輯注意**：邏輯／解析／同步／統計／時間軸／面板都在 `core.js`；`index.html` 只剩 render/事件/init。改邏輯去 core.js。**部署要同時上傳 `core.js` 與 `index.html`，並把 `index.html` 裡 `core.js?v=N` 的 N 一起進版號避快取。**
 2. **M2**：`liff.html` 精簡頁做出來，先用網址手動帶 `?key=` 假資料測解析／排人／時間軸。
+   - ✅ **已完成**。`liff.html` 共用 `core.js`，只寫自己的 `render()`（liffHeader＋清單/時間軸切換＋一顆固定底部「發送」鈕）＋LIFF 膠水＋`liffClick`（liff-send/liff-devparse 自己接，其餘全交給 core 的 `handle`）。
+   - 取公版三種來源：`?key=`（正式，跟 webhook 拿）、`?raw=`（測試帶原文）、都沒有→dev 貼上框。
+   - `boot()`：先 `pullSync`＋`startPoll`（資料安全 pull 過才准 push）→ `liff.init`＋`getProfile` 比對 `ALLOW_UIDS` 白名單決定 readOnly → `loadGongban`。
+   - `liffSend()`：`commit()`（計入統計＋上雲）＋`buildFilled()`＋`liff.sendMessages`（非 LINE 環境退回 `copyText`）。
+   - **驗證**：node --check；node 功能測（`?raw=` 解析 3 項→自動分配 9 人次→發送 log 0→1→buildFilled 含班員名字）；**Chromium 實截清單頁＋時間軸頁版面正確**（標頭日期、切換、打飯/公差分組、甘特方塊、補休自動帶出、固定發送鈕；無今日出勤/nav/貼上框）。
+   - ⚠️ `liff.html` 頂端 `LIFF_ID`／`GONGBAN_FETCH_URL`／`ALLOW_UIDS` 留空＝dev 模式，**M3 要填**。部署也要 `core.js?v=N` 進版號。
 3. **M3**：新 Apps Script webhook + inbox；你在 LINE 後台設好 channel/LIFF/webhook；跑通「轉傳公版→跳按鈕→開 LIFF→抓到公版」。
 4. **M4**：接上雲＋計入統計＋「發送」`liff.sendMessages`；手機實測整條龍。
 5. **M5**（前瞻）：commit 存 `texts[日期]` 上雲，為未來 bot 指令鋪路。
