@@ -192,6 +192,9 @@
    - **驗證**：node --check；node 功能測（`?raw=` 解析 3 項→自動分配 9 人次→發送 log 0→1→buildFilled 含班員名字）；**Chromium 實截清單頁＋時間軸頁版面正確**（標頭日期、切換、打飯/公差分組、甘特方塊、補休自動帶出、固定發送鈕；無今日出勤/nav/貼上框）。
    - ⚠️ `liff.html` 頂端 `LIFF_ID`／`GONGBAN_FETCH_URL`／`ALLOW_UIDS` 留空＝dev 模式，**M3 要填**。部署也要 `core.js?v=N` 進版號。
 3. **M3**：新 Apps Script webhook + inbox；你在 LINE 後台設好 channel/LIFF/webhook；跑通「轉傳公版→跳按鈕→開 LIFF→抓到公版」。
+   - ✅ **程式碼完成**：`line_webhook.gs`。`doPost` 收 LINE events→白名單檢查→存 inbox 配 key→回 Flex 按鈕（連 `liff.line.me/{LIFF_ID}?key=`）；`doGet?key=` 回 `{text:公版原文}`；`whoami` 回 userId；`trimInbox_` 只留最近 300 筆。node --check 過。
+   - ⏳ **待你在後台做**（見 §4）：建 Messaging API channel＋LIFF、設 Script Properties（CHANNEL_TOKEN/SHEET_ID/LIFF_ID/ALLOW_UIDS）、部署取 /exec、填 LINE Webhook URL、把 /exec 填進 `liff.html` 的 `GONGBAN_FETCH_URL`、把 LIFF_ID/ALLOW_UIDS 填進 `liff.html`。
+   - 契約：liff `?key=` ↔ webhook `doGet?key=` 回 `{text}`；Flex `uri` ↔ liff `boot` 讀 `params.key`。已對齊。
 4. **M4**：接上雲＋計入統計＋「發送」`liff.sendMessages`；手機實測整條龍。
 5. **M5**（前瞻）：commit 存 `texts[日期]` 上雲，為未來 bot 指令鋪路。
 6. **M6**（未來，可延後）：bot 指令「給我某天公版／分工」。
