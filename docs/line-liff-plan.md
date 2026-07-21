@@ -1,7 +1,7 @@
 # 261 排勤務板 — LINE / LIFF 串接規劃書 v1
 
-> 給接手的 AI 與使用者看。這份是「動工前的完整規劃」，還沒寫任何 code。
-> 前置閱讀：`handover_v8.md`（最新）＋ `handover_v4.md` 第七節（資料安全）。
+> 給接手的 AI 與使用者看。**M1～M4 已完成、手機實測整條龍成功**（見 §9 里程碑）。這份保留當初的完整規劃與架構說明；實作結果與踩坑記錄看 §9、§11 與 `handover_v9.md`、`line-qa.md`。
+> 前置閱讀：`handover_v9.md`（最新）＋ `handover_v4.md` 第七節（資料安全）。
 > 全程繁中＋台灣軍中用語。原則：先做出來、每步驗證、不碰壞已上線的 app。
 
 ---
@@ -193,11 +193,23 @@
    - ⚠️ `liff.html` 頂端 `LIFF_ID`／`GONGBAN_FETCH_URL`／`ALLOW_UIDS` 留空＝dev 模式，**M3 要填**。部署也要 `core.js?v=N` 進版號。
 3. **M3**：新 Apps Script webhook + inbox；你在 LINE 後台設好 channel/LIFF/webhook；跑通「轉傳公版→跳按鈕→開 LIFF→抓到公版」。
    - ✅ **程式碼完成**：`line_webhook.gs`。`doPost` 收 LINE events→白名單檢查→存 inbox 配 key→回 Flex 按鈕（連 `liff.line.me/{LIFF_ID}?key=`）；`doGet?key=` 回 `{text:公版原文}`；`whoami` 回 userId；`trimInbox_` 只留最近 300 筆。node --check 過。
-   - ⏳ **待你在後台做**（見 §4）：建 Messaging API channel＋LIFF、設 Script Properties（CHANNEL_TOKEN/SHEET_ID/LIFF_ID/ALLOW_UIDS）、部署取 /exec、填 LINE Webhook URL、把 /exec 填進 `liff.html` 的 `GONGBAN_FETCH_URL`、把 LIFF_ID/ALLOW_UIDS 填進 `liff.html`。
-   - 契約：liff `?key=` ↔ webhook `doGet?key=` 回 `{text}`；Flex `uri` ↔ liff `boot` 讀 `params.key`。已對齊。
+   - ✅ **後台完成**：使用者已建 channel/LIFF、設好四個 Script Properties、部署取得 /exec、填好 Webhook URL 與 liff.html 三常數（LIFF_ID `2010783262-dYWN11ji`、GONGBAN_FETCH_URL、ALLOW_UIDS）。
+   - 契約：liff `?key=` ↔ webhook `doGet?key=` 回 `{text}`；Flex `uri` ↔ liff `boot` 讀 `params.key`。已對齊、已實測通。
 4. **M4**：接上雲＋計入統計＋「發送」`liff.sendMessages`；手機實測整條龍。
-5. **M5**（前瞻）：commit 存 `texts[日期]` 上雲，為未來 bot 指令鋪路。
-6. **M6**（未來，可延後）：bot 指令「給我某天公版／分工」。
+   - ✅ **已完成、手機實測整條龍成功**（轉傳公版→跳按鈕→開 LIFF→解析排人→發送回聊天室轉傳）。
+   - 施工中修的坑（詳見 §11 與 `line-qa.md`）：Pages 網址大小寫、東西沒 merge 進 main、Apps Script 授權、whoami 沒回應、**`liff.isApiAvailable("sendMessages")` 丟 `unexpected api name`（已改成不用它、直接 try/catch 呼叫 sendMessages）**。
+5. **M5**（前瞻，**尚未做**）：commit/發送 時把 `buildFilled/buildPersonList` 字串存進雲端 `texts[日期]`，為未來 bot 指令鋪路。刻意先不做——要動 `payload/applyRemote` 同步核心，等基本流程長期穩定再做（見 handover_v9 第七節）。
+6. **M6**（未來，可延後）：bot 指令「給我某天公版／分工」，靠 M5 存的字串。
+
+## 11. 施工中踩到的坑（實測後補記）
+
+見 `docs/line-qa.md` 有完整問答。摘要：
+1. **GitHub Pages 網址大小寫敏感**：repo 是 `Army-duty-assign`（大寫A），Endpoint URL 要對應大小寫，否則 404。
+2. **東西留在工作分支沒進 main**：Pages 服務 main，要 merge 才會上線。
+3. **Apps Script Web App 部署**：要選「網頁應用程式」類型、授權（進階→前往(不安全)→允許）；打 `doGet?key=` 才會建 inbox。
+4. **whoami 沒回應**：查 CHANNEL_TOKEN、Webhook URL/Use webhook、官方帳號回應設定（Webhook 開/自動回應關）。
+5. **`liff.isApiAvailable("sendMessages")` 在此 SDK 版本會丟例外**：已改成不用它，直接 try/catch 呼叫。
+6. LIFF 底下自動生兩個 channel（LINE Login＋Messaging API），只管 Messaging API。
 
 ---
 
