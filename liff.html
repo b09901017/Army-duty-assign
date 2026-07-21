@@ -50,9 +50,9 @@
    ========================================================================== */
 
 /* ---- M3 要填的設定（現在留空＝dev 模式，可用 ?raw= 或貼上框測試） ---- */
-var LIFF_ID="";                 // ← LINE Developers 的 LIFF ID（例 1234567890-abcdef）
-var GONGBAN_FETCH_URL="";       // ← LINE webhook Apps Script 的 /exec（doGet?key= 會回 {text:公版原文}）
-var ALLOW_UIDS=[];              // ← 允許編輯的 LINE userId 陣列；留空＝全部允許（方便測試）
+var LIFF_ID="2010783262-dYWN11ji";                 // LINE Developers 的 LIFF ID
+var GONGBAN_FETCH_URL="https://script.google.com/macros/s/AKfycbxmfcXsNeZ-A0vSgtcH4Uo6wwyxvxIrIHV7EJcFK_VXY63wWC_hIkUAmwvLj-0GW7Qmsw/exec";       // LINE webhook Apps Script 的 /exec（doGet?key= 回 {text:公版原文}）
+var ALLOW_UIDS=[];              // ← 允許編輯的 LINE userId 陣列；留空＝全部允許（拿到你的 userId 後再填鎖起來）
 /* 雲端同步沿用 core.js 的 DEFAULT_SYNC_URL（跟主 App 同一份試算表）。 */
 
 var root=document.getElementById("root");
