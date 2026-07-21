@@ -180,6 +180,10 @@
 ## 9. 施工順序（里程碑，每步可驗證）
 
 1. **M1**：抽 `core.js`，index.html 改引用 → node --check ＋實測四頁行為不變。（不碰 LINE，先確定沒弄壞原 app）
+   - ✅ **已完成**。`core.js`（1634 行）＝邏輯層全部定義＋`fixMealTimes`；`index.html`（216 行）＝`<script src="core.js?v=45">`＋自己的 `render()`/`onInput`/`handle()`/`onClick`/init。
+   - 切割用 marker 精準切（渲染註解行 `/* ---------- 渲染 ---------- */` 為界；`fixMealTimes` 因被 core 的 `pullSync` 呼叫故移進 core）。兩檔皆 `"use strict";`，classic script 共用全域，載入順序 core→inline。
+   - **等價性測試通過**：同一 stub 環境跑「原始單檔」vs「core.js＋inline」，`state`／`render` 的 root/nav HTML／`parseGongban` 結果**逐字元相同**。
+   - ⚠️ **之後編輯注意**：邏輯／解析／同步／統計／時間軸／面板都在 `core.js`；`index.html` 只剩 render/事件/init。改邏輯去 core.js。**部署要同時上傳 `core.js` 與 `index.html`，並把 `index.html` 裡 `core.js?v=N` 的 N 一起進版號避快取。**
 2. **M2**：`liff.html` 精簡頁做出來，先用網址手動帶 `?key=` 假資料測解析／排人／時間軸。
 3. **M3**：新 Apps Script webhook + inbox；你在 LINE 後台設好 channel/LIFF/webhook；跑通「轉傳公版→跳按鈕→開 LIFF→抓到公版」。
 4. **M4**：接上雲＋計入統計＋「發送」`liff.sendMessages`；手機實測整條龍。
