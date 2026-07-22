@@ -81,8 +81,25 @@ function devPaste(){
   return card(label("〔測試模式〕貼上"+(isG?"行動準據":"公版"))+'<div style="font-size:11.5px;color:'+C.sub+';margin-top:6px;line-height:1.6;">正式流程是從 LINE bot 帶入（?key=）。這個框只在非 LINE 環境出現，方便測解析。</div><textarea data-input="paste" placeholder="貼'+(isG?"行動準據":"公版")+'…" style="width:100%;height:140px;margin-top:10px;padding:12px;border-radius:10px;border:1px solid '+C.line+';background:'+C.bg+';font-size:13.5px;line-height:1.6;outline:none;resize:vertical;font-family:ui-monospace,Menlo,monospace;">'+esc(typeof pasteText!=="undefined"?pasteText:"")+'</textarea><button class="btn" data-action="liff-devparse" style="width:100%;margin-top:10px;padding:13px;border-radius:11px;border:none;background:'+C.greenDeep+';color:#fff;font-weight:800;font-size:15px;">解析'+(isG?"準據":"勤務")+'</button>');
 }
 
+/* ---------- 唯讀檢視模式（?type=view&view=A/B/C&date=）：給群組 carousel 點進來看 ---------- */
+function viewHeader(md,v){
+  var name=(v==="C")?"八人時段表":(v==="B")?"八人分工":"當天流程";
+  return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div style="width:34px;height:34px;border-radius:10px;background:'+C.greenDeep+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;">261</div><div style="min-width:0;"><div style="font-size:17px;font-weight:800;">'+esc(name)+'　<span style="font-size:13px;color:'+C.sub+';font-weight:700;">'+esc(md)+'</span></div><div style="font-size:11.5px;color:'+C.sub+';">看看就好，不會改到東西</div></div></div>';
+}
+function renderView(){
+  var md=(state._viewDate||todayLabel()).replace(/[（(].*$/,""),v=state._view||"A";
+  var head=viewHeader(md,v);
+  var plan=null;try{plan=planForBoard(md);}catch(e){}
+  if(!plan){root.innerHTML=head+card('<div style="text-align:center;color:'+C.sub+';font-size:13.5px;padding:30px 12px;line-height:1.7;">這天還沒有排班資料，<br>或還在從雲端載入…</div>');return;}
+  var body;
+  try{body=(v==="C")?(dayLegend()+modeC(plan)):(v==="B")?(dayLegend()+modeB(plan)):modeA(plan);}
+  catch(e){body=card('<div style="color:'+C.red+';">畫面出錯：'+esc((e&&e.message)||String(e))+'</div>');}
+  root.innerHTML=head+body;
+}
+
 /* ---------- liff 專屬 render（覆蓋 core 沒有的頁面組合；render 為每頁各自定義） ---------- */
 function render(){
+  if(state._mode==="view"){renderView();return;}     // 唯讀檢視（carousel 點進來）
   if(state._mode==="guide"){renderGuide();return;}   // 行動準據上傳模式
   refreshHist();
   var h=liffHeader();
@@ -252,18 +269,33 @@ function loadContent(key,raw,type){
   state._dev=true;render();   // 沒 key 沒 raw → 測試模式，顯示貼上框
 }
 
+/* 動態問 webhook「這個 userId 能不能編輯」（機器人開通的編輯者也能編） */
+function fetchCanEdit(uid){
+  if(!GONGBAN_FETCH_URL||!uid)return;
+  fetch(GONGBAN_FETCH_URL+(GONGBAN_FETCH_URL.indexOf("?")>=0?"&":"?")+"canedit="+encodeURIComponent(uid))
+    .then(function(r){return r.text();}).then(function(t){var o=null;try{o=JSON.parse(t);}catch(e){}
+      if(o&&typeof o.edit==="boolean"){var ro=!o.edit;if(ro!==state.readOnly){state.readOnly=ro;render();}}})
+    .catch(function(){});
+}
+
 /* ---------- 啟動 ---------- */
 function boot(){
   var params={};(location.search||"").replace(/^\?/,"").split("&").forEach(function(kv){if(!kv)return;var p=kv.split("=");params[decodeURIComponent(p[0])]=decodeURIComponent((p[1]||"").replace(/\+/g," "));});
   var key=params.key||"",raw=params.raw||"",type=params.type||"";
   // 先連雲端（資料安全：pull 過才准 push）
   if(state.syncUrl){state.syncStatus="sync";pullSync();startPoll();}
+  // 唯讀檢視模式（群組 carousel 點進來）：不用取原文、不用白名單，pull 回來就畫
+  if(type==="view"){
+    state._mode="view";state._view=(params.view||"A").toUpperCase();state._viewDate=(params.date||todayLabel()).replace(/[（(].*$/,"");state.readOnly=true;
+    render();return;
+  }
   if(LIFF_ID&&window.liff){
     liff.init({liffId:LIFF_ID}).then(function(){return liff.getProfile();}).then(function(p){
       state._uid=p.userId;
-      var allowed=(!ALLOW_UIDS.length)||ALLOW_UIDS.indexOf(p.userId)>=0;
+      var allowed=(!ALLOW_UIDS.length)||ALLOW_UIDS.indexOf(p.userId)>=0;   // 本機白名單（owner 一定通）先判定
       state.readOnly=!allowed;
       loadContent(key,raw,type);
+      fetchCanEdit(p.userId);   // 再跟 webhook 動態確認（機器人開通的編輯者也能編）
     }).catch(function(){state.readOnly=false;loadContent(key,raw,type);});   // 外部瀏覽器等初始化失敗→當測試
   }else{
     state.readOnly=false;loadContent(key,raw,type);
