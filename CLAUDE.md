@@ -19,6 +19,7 @@ data/
   action-guides/       每日「行動準據」原文（時間軸：起床、升旗、用餐…），YYYY-MM-DD.txt
   duty-templates/      每日完整「勤務公版」原文（含別班/別梯人名），YYYY-MM-DD.txt
   guard-template.txt   站哨填空公版
+  schedule8.jpg        行程 carousel「八人時段表」用的固定圖片（LINE bot；GitHub Pages 服務）
 docs/
   roster.txt           班級名冊（代號=本名）
   duty-rules.md         AI 幫忙「填公版」時要遵守的規則

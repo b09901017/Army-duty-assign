@@ -18,7 +18,7 @@
 3. **新增 `line_webhook.gs`**：LINE bot 後端（獨立的第二個 Apps Script，跟管資料的 `sync_AppsScript.gs` 分開）。
 4. 完成一條龍：**LINE 轉傳空白公版 → bot 回按鈕 → 開 LIFF 排班 → 發送回聊天室轉傳**，同時計入統計＋上雲。
 
-**目前 index.html / core.js ≈ v45、liff.html（含排班/準據上傳/唯讀檢視三模式）、line_webhook.gs（群組 bot）、sync_AppsScript.gs（v3 分片，未動）。**
+**目前 index.html / core.js ≈ v46、liff.html（含排班/準據上傳/唯讀檢視三模式）、line_webhook.gs（群組 bot）、sync_AppsScript.gs（v3 分片，未動）。**
 
 ---
 
@@ -31,7 +31,7 @@
 | 轉傳「行動準據」 | 編輯者 | Flex「上傳 X/X 準據」→ LIFF `?type=guide` |
 | `公版` / `7/21 公版` | 全開 | 填好公版文字（讀 `texts[日期].filled`） |
 | `分工` / `7/21 分工` | 全開 | 個人分工文字（`texts[日期].persons`） |
-| `行程` / `7/21 行程` | 全開 | **carousel 三頁**（八人時段表/當天流程/八人分工）→ LIFF `?type=view&view=C/A/B` |
+| `行程` / `7/21 行程` | 全開 | **carousel 4 張**：①完整勤務(texts.filled) ②行動準據(準據原文) ③個人分工(texts.persons) ④八人時段表(固定圖)；前三張底部「視覺化呈現」+ ④「看完整」開 LIFF `?type=view&view=C/A/B`（詳見第十節 (6)） |
 | `開通編輯權限` | 任何人 | 「為您生成隨機碼：K-XXXX\n請貼給 {OWNER_NAME}」 |
 | `開通 K-XXXX` | 班頭 | 把該代碼的人加進 `editors` 分頁 |
 | `移除 K-XXXX` / `名單` | 班頭 | 管理編輯者 |
@@ -42,7 +42,7 @@
 | 群組其他閒聊 | — | **安靜不回**（一對一才會回選單） |
 
 ### Script Properties（line_webhook.gs 那份 Apps Script）
-`CHANNEL_TOKEN`、`SHEET_ID`、`LIFF_ID`、`ALLOW_UIDS`（**只放班頭**）、`APP_URL`（選填）、`OWNER_NAME`（選填，預設「旭辰」）
+`CHANNEL_TOKEN`、`SHEET_ID`、`LIFF_ID`、`ALLOW_UIDS`（**只放班頭**）、`APP_URL`（選填）、`OWNER_NAME`（選填，預設「旭辰」）、`SCHED_IMG_URL`（選填，行程 carousel 八人時段表那張固定圖網址；預設 `data/schedule8.jpg`，設 `none`/`off` 退回文字卡）
 
 ### 試算表分頁（都在 sync 那份表；webhook 用 openById 存取）
 `data`（sync 存的完整 payload 分片，webhook 讀 texts）、`inbox`（公版/準據暫存）、`codes`（代碼↔uid）、`editors`（編輯者）、`members`（群組認人給關燈用）
@@ -235,6 +235,7 @@ git checkout <工作分支>
 - **liff 動態權限**：`doGet?canedit=uid`→`{edit:bool}`。liff `boot` 先用本機 `ALLOW_UIDS` 判定（owner 一定通），再 `fetchCanEdit` 跟 webhook 確認（機器人開通的編輯者也能編；fetch 失敗 fail-safe 維持本機判定）。→ 兩邊白名單一致，加人只在 LINE 裡「開通」即可。
 
 ### (3) 行程 carousel 三頁 + liff 唯讀檢視
+> ⚠️ **carousel 已於 (6) 改成 4 張 mega**（本節是當時的三頁版，看最終狀態直接跳 (6)）；liff 唯讀檢視 view=A/B/C 仍沿用。
 - 查「行程/流程」→ **kilo carousel 三頁**（八人時段表/當天流程/八人分工），各自按鈕開 `liff.line.me/{LIFF_ID}?type=view&view=C/A/B&date=`。
 - liff `?type=view`：`boot` 認出後 **pull → 唯讀 render `modeC/modeA/modeB`**（共用 core 那三個 render），不用取原文、不用白名單、`readOnly=true`、無發送鈕。pull 回來會自動重繪。
 
@@ -253,32 +254,43 @@ git checkout <工作分支>
 - ⚠️ 部署：webhook 改了要**重新部署 Apps Script**；liff 改了要 merge 到 main（Pages）。LINE 後台要開「允許加入群組」並把 bot 加進群組。
 
 ### (5) 追加優化（第二批）
-- **carousel 三頁改「預覽內容」**：`dayPreview_` 讀 sync `data` 的 `plans[md]`（fallback `boards[md]`）→ 八人時段表(byTime，事件依時間)/當天流程(schedule 準則)/八人分工(byPerson，每人勤務) 三種預覽，塞進 kilo bubble body（`rowTimeText_`/`rowPerson_`），底部「看完整」開 LIFF view。順序＝時段表→流程→分工。
+- **carousel 三頁改「預覽內容」**（⚠️ 此三頁預覽已於 (6) 重構成 4 張，`dayPreview_`/`rowTimeText_`/`rowPerson_`/`previewBubble_` 仍在、退回文字卡時會用到）：`dayPreview_` 讀 sync `data` 的 `plans[md]`（fallback `boards[md]`）→ 八人時段表(byTime，事件依時間)/當天流程(schedule 準則)/八人分工(byPerson，每人勤務) 三種預覽，塞進 bubble body（`rowTimeText_`/`rowPerson_`），底部「看完整」開 LIFF view。
 - **代碼觸發改「開通編輯權限」**，回覆改「為您生成隨機碼：K-XXXX\n請貼給 {OWNER_NAME}」（屬性 `OWNER_NAME` 預設「旭辰」）；owner 打→「你已經有排班權限了」。
 - **@提及/指令 回覆改「到底是哪裡有問題 🤨」** + quick reply（含「開通編輯權限」「關燈」）。
 - **「關燈」→ 隨機抽班上一人 @他**：`members` 分頁被動認人（群組有人講話就 `getGroupMemberProfile` 記 uid↔顯示名，記過跳過不重打 API）；`lightsOut_` 從該群隨機抽、真 mention（`mentionees` index/length/userId）；`cleanName_`「261-05廖翊滕」→「廖翊滕」；沒認到人 fallback 純文字抽 `ROSTER`。
 - 新屬性 `OWNER_NAME`；新分頁 `members`。stub 測 15 項（carousel 預覽/文案/關燈真 mention/認人/fallback）全過。
 
-### (6) 追加優化（第三批）：群組貼公版/準據一律安靜
-- **需求**：群組裡只提供「查詢資訊」（公版/分工/行程），使用者貼上完整公版或行動準據時 bot 不再回「接到公版了／收到行動準據」的 Flex（避免洗版）。要拿排班／上傳按鈕改成**私訊 bot**（一對一）貼公版。
-- **改法**（`handleEvent_`）：`classifyText_` 判出 `gongban`/`guide` 後，在編輯者檢查**之前**加一行 `if(isGroup) return;`——群組貼原文一律不回、也不存 inbox（存了也沒按鈕可開，沒意義）。一對一維持原本「編輯者→給 Flex 按鈕、非編輯者→提示拿代碼」。
-- **不影響查詢**：查詢在 `parseQuery_`／`answerQuery_`（更前面就攔截），單行的「公版/分工/行程」在群組照樣回。`classifyText_` 只吃「多行原文」。
-- stub 路由測 9 項全過（群組貼公版/準據＝靜、群組查行程/公版/分工＝回、群組閒聊＝靜、私訊貼公版/準據＝給按鈕、私訊閒聊＝選單）。
-- ⚠️ 改了 `.gs`，**使用者要重新部署那份 webhook Apps Script**（管理部署→編輯→新版本→部署，網址不變）才生效。
-### (7) 行程 carousel 改 4 張（文字＋視覺化按鈕）＋固定圖片（webhook）
-- **4 張**（`carouselSchedule_`）：①完整勤務 ②行動準據 ③個人分工 ④八人時段表(圖)。前三張都是「純文字卡＋底部『視覺化呈現』按鈕連到對應 LIFF 檢視」，第四張圖片。使用者要「勤務／準據／分工並排左右滑，不用上下滑長訊息；每張再連到視覺化」。
-- **① 完整勤務**＝`textBubbleBtn_` 秀 `texts[md].filled`（填好名字的公版，和班長給的一樣、不上色）；按鈕「視覺化呈現」→ `view=C`（八人時段表）。
-- **② 行動準據**＝`textBubbleBtn_` 秀 `guideText_(data,md)`：讀 `plans[md].schedule`(fallback `boards[md].schedule.items`) **完整重建**時間軸文字（`fmtRange_` 保留 `0600-0630` 起訖、含無時間的行）；按鈕「視覺化呈現」→ `view=A`（當天流程）。雲端沒存準據 raw，用 items 還原；夠忠實。
-- **③ 個人分工**＝`textBubbleBtn_` 秀 `texts[md].persons`；按鈕「視覺化呈現」→ `view=B`（八人分工）。
-- **④ 八人時段表**＝`imageBubble_`：**標題在上→圖片在中→「看完整」在下**。圖片放 **body 的 image component**（不是 hero，hero 一定在最頂、標題會被壓下去）。固定圖 `data/schedule8.jpg`（543×1280，`aspectRatio:'543:1280' aspectMode:'cover'`）；按鈕「看完整」→ `view=C`。**不是截圖**，一張放進 repo、GitHub Pages 服務的公開圖 → 繞過 §7.6 圖床難題。圖網址可用 Script Property **`SCHED_IMG_URL`** 覆蓋（換圖即時生效不用重部署）；設 `none`/`off` 退回文字預覽卡（`previewBubble_`）。
-- **卡片內容定案**：① 完整勤務＝`texts[md].filled`（**填好名字的完整公版**）。② 行動準據＝**班長準據原文**：優先 `boards[md].schedule.raw`（見下方 core.js 補存）→ `inbox` 私訊原文（`rawByType_`）→ `guideText_` 重建 → 提示。③ 個人分工＝`texts[md].persons`。
-- **⚠️ core.js 補存準據原文（重要，動到同步層）**：原本 `texts` 沒有準據欄位、`slimBoards` 上雲又把 `schedule.raw` 丟掉 → **雲端根本沒有班長準據原文**，bot 只能拿解析後時間軸（lossy）。修法：`slimBoards` 的 schedule 物件加 `raw:sc.raw||""`（準據原文一起上雲）；`mergeBoards` 的 schedule.raw 改 `sc.raw||(loc…raw)||""`（**採合併勝方/雲端的 raw**，別台上傳的準據原文也傳得過來）。存/傳/併/推四步：存（board 本來就有 schedule.raw）、傳（slimBoards now 帶）、併（mergeBoards now 採勝方 raw）、推（不變）。**只加欄位、不改 ts 合併判斷**，render/nav/parseGongban 逐字元不變（等價測試過）＋ slimBoards/mergeBoards roundtrip 測 raw 傳遞/保留過。⚠️ 動了 core.js → `core.js?v=46`、三檔一起上、**merge 到 main**。
-- **尺寸**：4 張一律 **`mega`**（kilo 會變窄不是變短，維持 mega 寬度）。
-- **④ 圖片大小**：body image `size:'70%' align:'center'`（不是 `full`），避免 543×1280 直式圖把卡片拉太長；比例仍 `543:1280 cover`（不裁切），點圖／看完整開 LIFF 完整檢視。想調大小改這個 `%`。
-- **⚠️ carousel bubble 尺寸鐵則（踩過坑，別再犯）**：LINE 規定 **carousel 裡不能有 `giga`，且所有 bubble 必須同一尺寸**，違反→整則 Flex 被打回 400、`reply_` 因 `muteHttpExceptions` 靜默吞掉→使用者端「打行程毫無反應」（查了老半天）。曾把文字卡做成 `giga`＋其餘 `kilo`（混尺寸＋含 giga）中這坑。改卡片時務必**全部同尺寸、別用 giga**。
-- stub 測 20 項全過（4 張/kilo 同尺寸/無 giga/各卡標題與內容/三張視覺化按鈕→C/A/B/圖片卡標題在上圖在下無 hero/看完整→C/Flex<50KB）＋群組路由回歸 9 項全過。
-- ⚠️ 部署：**圖片要進 main**（GitHub Pages 才服務得到 `data/schedule8.jpg`，否則圖 404），且 **webhook 那份 Apps Script 要重新部署**（新版本）才生效。core.js/index.html 沒動、主 App 不用重傳。
-- 註：另檢查過「公版裡的衛哨會不會覆蓋站哨分頁」——**不會**。`parseGongban` 產生 `state.duties`、站哨在 `state.guard`，兩者分離；且衛哨行（`🔵衛哨：` 底下的 `2402…`/日期範圍）本來就被當 static、不產生勤務、不進統計（用 26 份真實公版驗過，含哨勤務數＝0）。曾試著加「衛哨區塊守衛」硬擋，但等價測試抓到會誤吞衛哨區塊後面接的 `打靶*10員：` 等正常勤務（那些區塊沒有 🔷/🔵 標題分隔），故**不改 core.js**——現況已符合「站哨只在站哨分頁排」。
+### (6) 追加優化（第三批）：群組安靜化＋行程 carousel 4 張＋準據原文上雲
+> 這批動 `line_webhook.gs`（群組行為、carousel）＋`core.js`（準據原文上雲）。以下是**最終狀態**。
+
+**A. 群組貼公版/準據一律安靜（`handleEvent_`）**
+- 群組只提供「查詢資訊」；貼完整公版/行動準據時 bot 不回 Flex、也不存 inbox（避免洗版）。作法：`classifyText_` 判出 `gongban`/`guide` 後、編輯者檢查**之前**加 `if(isGroup) return;`。
+- 要拿排班/上傳按鈕 → **私訊 bot**（一對一）貼公版，維持原本「編輯者給 Flex 按鈕、非編輯者提示拿代碼」。
+- 查詢不受影響（`parseQuery_`/`answerQuery_` 更前面就攔截；`classifyText_` 只吃多行原文）。
+
+**B. 行程 carousel 改 4 張（`carouselSchedule_`）**——使用者要「並排左右滑、不用上下滑長訊息，每張再連視覺化」
+| 卡 | 標題 | 內容來源 | 底部按鈕 → LIFF |
+|---|---|---|---|
+| ① | 完整勤務 | `texts[md].filled`（填好名字的完整公版） | 視覺化呈現 → `view=C` |
+| ② | 行動準據 | **班長準據原文**：`boards[md].schedule.raw` → `rawByType_`(inbox 私訊原文) → `guideText_`(重建) → 提示 | 視覺化呈現 → `view=A` |
+| ③ | 個人分工 | `texts[md].persons` | 視覺化呈現 → `view=B` |
+| ④ | 八人時段表 | 固定圖片（標題在上→圖在中→按鈕在下） | 看完整 → `view=C` |
+- 前三張＝`textBubbleBtn_`（純文字卡＋按鈕）；第四張＝`imageBubble_`。**4 張一律 `mega`**。
+- 圖片放 **body 的 image component**（`size:'70%' align:'center'`，比例 `543:1280 cover` 不裁切），**不是 hero**（hero 一定在最頂、標題會被壓下去）。想調大小改那個 `%`。
+- 圖檔 `data/schedule8.jpg`（543×1280，**固定圖、非截圖**，GitHub Pages 服務 → 繞過 §7.6 圖床難題）。網址可用 Script Property **`SCHED_IMG_URL`** 覆蓋（即時生效不用重部署）；設 `none`/`off` 退回文字預覽卡（`previewBubble_`）。
+- 新 webhook 函式：`fmtRange_`/`guideText_`/`rawByType_`/`textBubbleBtn_`/`imageBubble_`。
+
+**C. ⚠️ core.js 補存「準據原文」上雲（動到同步層）**
+- 問題：`texts` 沒有準據欄位、`slimBoards` 上雲又把 `schedule.raw` 丟掉 → 雲端沒有班長準據原文，bot 只拿得到解析後時間軸（lossy）。
+- 修法：`slimBoards` 的 schedule 加 `raw:sc.raw||""`；`mergeBoards` 的 schedule.raw 改 `sc.raw||(loc…raw)||""`（**採合併勝方/雲端 raw**，別台上傳的準據原文也傳得過來）。**只加欄位、不動 ts 合併判斷**。
+- 前提：準據要在 **v46 部署後**經 App/LIFF 貼過，`schedule.raw` 才會上雲；舊資料沒原文 → 卡②退回重建/提示。
+- 驗證：parseGongban 逐字元等價＋slimBoards/mergeBoards roundtrip（raw 傳遞/保留）＋webhook 四卡＋群組路由回歸全過。
+
+**D. 兩個踩過的坑（別再犯）**
+- **carousel bubble 尺寸鐵則**：LINE 規定 carousel 裡**不能有 `giga`、且所有 bubble 必須同尺寸**，違反→整則 Flex 被打回 400、`reply_` 因 `muteHttpExceptions` 靜默吞掉→使用者端「打行程毫無反應」。曾把文字卡做 `giga`＋其餘 `kilo` 中這坑。**改卡片務必全部同尺寸、別用 giga。**
+- **公版裡的衛哨不會覆蓋站哨分頁**：`parseGongban` 產生 `state.duties`、站哨在 `state.guard`，兩者分離；衛哨行（`🔵衛哨：`底下 `2402…`/日期範圍）本來就當 static、不產生勤務、不進統計（26 份真實公版驗過，含哨勤務＝0）。曾想加「衛哨區塊守衛」硬擋，但等價測試抓到會**誤吞**衛哨區塊後面接的 `打靶*10員：` 等正常勤務（那些沒有 🔷/🔵 標題分隔），故**不改 core.js**。
+
+**部署**：改 `core.js`（含 B 的圖檔）→ 三檔一起上、`core.js?v=46`、**merge 到 main**（Pages 才有 `data/schedule8.jpg`，否則圖 404）；改 `line_webhook.gs` → **重新部署那份 Apps Script**（新版本）。
 
 ---
 
