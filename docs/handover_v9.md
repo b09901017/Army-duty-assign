@@ -178,6 +178,41 @@ git checkout <工作分支>
 - liff：準據/公版 × 過去/未來日期的確認流程、`uploadGuide` 保留既有 duties、texts 連動；Chromium 實截準據上傳頁。
 - webhook：node --check、`classifyText_` 26/26、查詢判斷 fallback edge case。
 
+> ⚠️ 注意：`tryQuery_/helpText_/allowed_` 已在「群組化」那批（第十節）被 `parseQuery_/answerQuery_/introMsg_/allowedEdit_` 取代，本節文字描述的是當時版本。
+
+## 十、群組化：情境分類＋權限拆分＋代碼開通＋carousel/檢視＋@提及/語音/app（webhook + liff）
+
+> 目的：把 bot 拉進 8 人群組。群組要「安靜、大家看結果」，一對一才「你一句他一句」。動 `line_webhook.gs` 與 `liff.html`，**core.js 沒動**。
+
+### (1) 情境分類 + 權限拆分（webhook `handleEvent_`）
+- `ev.source.type`：`group`/`room`＝群組、`user`＝一對一。
+- **群組預設安靜**：只回「查詢／指令／@提及／語音」；閒聊、非編輯者貼原文 → **直接 return 不回**（不洗版）。一對一才會對看不懂的訊息回選單。
+- **權限兩層**：看結果（公版/分工/行程查詢）**全開**；排班/上傳（貼原文拿按鈕）限**編輯者**。
+  - `isOwner_(uid)`＝`ALLOW_UIDS` 屬性；`allowedEdit_(uid)`＝owner ＋ `editors` 分頁。`ALLOW_UIDS` 空＝測試全開。
+
+### (2) 友善代碼 + 機器人管理編輯名單（不用再手改後台）
+- 隊友打「代碼」→ `codes` 分頁配 `K-XXXX`（不露 userId）→ 貼給班頭。
+- 班頭打「開通 K-XXXX」→ `uidOfCode_` 還原 userId → 加進 `editors` 分頁。「移除」「名單」管理，**只有 owner 能管**。
+- **liff 動態權限**：`doGet?canedit=uid`→`{edit:bool}`。liff `boot` 先用本機 `ALLOW_UIDS` 判定（owner 一定通），再 `fetchCanEdit` 跟 webhook 確認（機器人開通的編輯者也能編；fetch 失敗 fail-safe 維持本機判定）。→ 兩邊白名單一致，加人只在 LINE 裡「開通」即可。
+
+### (3) 行程 carousel 三頁 + liff 唯讀檢視
+- 查「行程/流程」→ **kilo carousel 三頁**（八人時段表/當天流程/八人分工），各自按鈕開 `liff.line.me/{LIFF_ID}?type=view&view=C/A/B&date=`。
+- liff `?type=view`：`boot` 認出後 **pull → 唯讀 render `modeC/modeA/modeB`**（共用 core 那三個 render），不用取原文、不用白名單、`readOnly=true`、無發送鈕。pull 回來會自動重繪。
+
+### (4) @提及 / 語音 / app / 指令
+- `isMentioned_`（`msg.mention.mentionees[].isSelf`）→ `introMsg_`（介紹＋**quick reply** 指令快捷：公版/分工/行程/app/代碼/指令）。
+- 語音 `msg.type==='audio'` → 回「浩ㄏㄠˇ～～～」（群組＋一對一）。
+- 「app/網址/完整版」→ 回完整 App 網址（`APP_URL` 屬性，預設 github.io 那條）。
+
+### 新增 Script Properties / 分頁
+- 屬性：`APP_URL`（選填）。`ALLOW_UIDS` 現在只放**班頭**，其他編輯者用「開通」加。
+- 自動建分頁：`codes`（代碼↔uid）、`editors`（編輯者）。inbox 不變。
+
+### 測試
+- webhook：Apps Script stub 跑 **20 項路由測試全過**（語音、群組安靜、查詢全開、carousel 三頁 kilo、一對一選單、權限拆分、代碼→開通→變編輯者、@提及、app、canedit）。
+- liff：view=A/B/C 唯讀 render（_mode/readOnly/標頭/資料/無發送鈕/不丟例外）＋沒資料提示；Chromium 實截 modeC 檢視頁。
+- ⚠️ 部署：webhook 改了要**重新部署 Apps Script**；liff 改了要 merge 到 main（Pages）。LINE 後台要開「允許加入群組」並把 bot 加進群組。
+
 ---
 
 ## 八、測試與注意事項
