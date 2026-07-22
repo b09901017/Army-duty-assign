@@ -18,7 +18,43 @@
 3. **新增 `line_webhook.gs`**：LINE bot 後端（獨立的第二個 Apps Script，跟管資料的 `sync_AppsScript.gs` 分開）。
 4. 完成一條龍：**LINE 轉傳空白公版 → bot 回按鈕 → 開 LIFF 排班 → 發送回聊天室轉傳**，同時計入統計＋上雲。
 
-**目前 index.html / core.js ≈ v45、liff.html v1、line_webhook.gs v1、sync_AppsScript.gs（v3 分片，未動）。**
+**目前 index.html / core.js ≈ v45、liff.html（含排班/準據上傳/唯讀檢視三模式）、line_webhook.gs（群組 bot）、sync_AppsScript.gs（v3 分片，未動）。**
+
+---
+
+## 現況總覽（下一個 AI 先看這張速查表，細節再往下翻）
+
+### bot 指令一覽（line_webhook.gs · 詳見第十節）
+| 打什麼 / 做什麼 | 誰可以 | bot 回什麼 |
+|---|---|---|
+| 轉傳「空白公版」 | 編輯者 | Flex「排 X/X 的班」→ 開 LIFF 排班 |
+| 轉傳「行動準據」 | 編輯者 | Flex「上傳 X/X 準據」→ LIFF `?type=guide` |
+| `公版` / `7/21 公版` | 全開 | 填好公版文字（讀 `texts[日期].filled`） |
+| `分工` / `7/21 分工` | 全開 | 個人分工文字（`texts[日期].persons`） |
+| `行程` / `7/21 行程` | 全開 | **carousel 三頁**（八人時段表/當天流程/八人分工）→ LIFF `?type=view&view=C/A/B` |
+| `開通編輯權限` | 任何人 | 「為您生成隨機碼：K-XXXX\n請貼給 {OWNER_NAME}」 |
+| `開通 K-XXXX` | 班頭 | 把該代碼的人加進 `editors` 分頁 |
+| `移除 K-XXXX` / `名單` | 班頭 | 管理編輯者 |
+| `app` / `網址` / `完整版` | 全開 | 完整 App 網址（唯讀看全部） |
+| `指令` / @提及機器人 | 全開 | 「到底是哪裡有問題 🤨」＋ quick reply |
+| `關燈` | 全開 | 隨機抽班上一人 @他去關燈💡 |
+| （語音訊息） | — | 「浩ㄏㄠˇ～～～」 |
+| 群組其他閒聊 | — | **安靜不回**（一對一才會回選單） |
+
+### Script Properties（line_webhook.gs 那份 Apps Script）
+`CHANNEL_TOKEN`、`SHEET_ID`、`LIFF_ID`、`ALLOW_UIDS`（**只放班頭**）、`APP_URL`（選填）、`OWNER_NAME`（選填，預設「旭辰」）
+
+### 試算表分頁（都在 sync 那份表；webhook 用 openById 存取）
+`data`（sync 存的完整 payload 分片，webhook 讀 texts）、`inbox`（公版/準據暫存）、`codes`（代碼↔uid）、`editors`（編輯者）、`members`（群組認人給關燈用）
+
+### liff.html 頂端常數（M3 填的）
+`LIFF_ID`、`GONGBAN_FETCH_URL`（webhook 的 /exec）、`ALLOW_UIDS`（班頭 userId；其他編輯者靠 `?canedit=` 動態問 webhook）
+
+### 部署 checklist（改完哪個要做什麼）
+- 改 `core.js`/`index.html`/`liff.html` → **merge 到 main**（Pages 才更新）＋ `core.js?v=N` 進版號。
+- 改 `line_webhook.gs` → **重新部署那份 Apps Script**（管理部署→編輯→新版本→部署；網址不變）。
+- 改 `sync_AppsScript.gs` → 同上，重新部署那份。
+- Script Properties 改值 → **即時生效、不用重部署**。
 
 ---
 
@@ -95,12 +131,14 @@ line_webhook.gs    ★新★ LINE bot 後端（獨立的第二個 Apps Script，
 
 ## 四、line_webhook.gs（LINE bot 後端）重點
 
-- **獨立的第二個 Apps Script**，不是貼在試算表那個。用 `SpreadsheetApp.openById(SHEET_ID)` 存取同一份試算表的 `inbox` 分頁。
+> ⚠️ 本節是 M3 初版的骨架；**webhook 現在功能多很多**（分類/查詢/carousel/權限/代碼/關燈…），完整現況看**最上面的速查表**＋**第九、十節**。這裡只留「為什麼獨立」這種不變的底層。
+
+- **獨立的第二個 Apps Script**，不是貼在試算表那個。用 `SpreadsheetApp.openById(SHEET_ID)` 存取同一份試算表的分頁。
   - 為什麼要獨立：**一個 Apps Script 專案只能有一個 `doGet`／`doPost`**，sync 那份已經用掉了，硬塞會撞名。獨立專案＝各自的 doGet/doPost/部署網址，且完全不碰管資料那份。
-- `doPost`：收 LINE events → `whoami` 回 userId → 白名單檢查 → 判斷像不像公版 → 存 inbox 配 key → 回 Flex 按鈕。
-- `doGet?key=xxx`：回 `{text:公版原文}`（liff.html 抓公版用）。**沒帶 key 的 doGet 只回 alive 訊息、不碰試算表**（所以第一次打不會建 inbox，要打 `?key=` 才會建）。
-- **Script Properties**（要設四個）：`CHANNEL_TOKEN`、`SHEET_ID`、`LIFF_ID`、`ALLOW_UIDS`（逗號分隔多人；空＝全部允許）。
-- `trimInbox_(300)`：只留最近 300 筆公版。
+- `doPost`：收 LINE events → `handleEvent_` 分流（語音/提及/指令/查詢/貼原文…，見第十節）。
+- `doGet?key=xxx`→`{text,type}`（liff 抓原文）；`doGet?canedit=uid`→`{edit:bool}`（liff 動態問權限）；沒參數只回 alive。
+- **Script Properties**：`CHANNEL_TOKEN`、`SHEET_ID`、`LIFF_ID`、`ALLOW_UIDS`(班頭)、`APP_URL`(選填)、`OWNER_NAME`(選填)。
+- `trimInbox_(300)`：inbox 只留最近 300 筆。
 
 ### 安全性（誠實的限制）
 - **Apps Script 收不到 HTTP header → 無法驗 `x-line-signature`**（已知限制）。補償＝userId 白名單（webhook 端是真防線；liff.html 端的 `ALLOW_UIDS` 是 client-side，只防手滑、可被繞過）。8 人勤務板、非機敏、雲端有既有保護，可接受。
@@ -142,8 +180,9 @@ git checkout <工作分支>
 2. ✅ **M6 已完成**（見第九節）：webhook 區分公版/準據 + 查詢指令。
 3. **行動準據上傳已完成**（見第九節）：傳準據給 bot → LIFF 上傳到 `boards[日期].schedule`。
 4. liff「發送」目前只送**填好公版**一則；未來可加送**個人分工**（`buildPersonList()`）第二則。
-5. `ALLOW_UIDS` 目前寫死在 liff.html（client，只防手滑）＋ Script Properties（server，真防線）兩處，加人要兩邊改。
-6. v4/v8 的老待辦仍在：整份欄位（names/absence/mealQueue/guardTally/guard）無逐項 ts、raw 原文不同步、站哨自動分配不看排休、`.gs` rebuild 凍結列權限例外等。
+5. **編輯者權限已改成機器人動態管理**（第十節 (2)）：班頭在 LINE 打「開通 代碼」即可，不用再手改後台。liff.html 頂端 `ALLOW_UIDS` 只留班頭當 fail-safe，其餘靠 `?canedit=` 動態問 webhook。
+6. **行程 carousel「美圖預覽」（option A，評估過、暫緩、使用者說先不做）**：想讓卡片直接顯示像 App 那樣的甘特圖，Flex 原生辦不到（它不是網頁），唯一方法是**把畫面拍成 PNG 貼進卡片**。已實測 **html2canvas 對 modeC 截圖畫質完美**（用 `/tmp` 的 Chromium＋html2canvas 驗過），所以**產圖沒問題**；卡關在**圖床**（要公開 https 網址）——Drive 連結在 LINE 裡不穩，建議用 **Cloudinary unsigned upload**（免費、可靠）。做法：liff 發送時 html2canvas 拍三張→上傳 Cloudinary→URL 存進 `texts[日期].images={C,A,B}`→webhook carousel 有圖放圖、沒圖退回現在的文字卡。工程約半天。**目前是文字預覽卡（第十節 (5)）。**
+7. v4/v8 的老待辦仍在：整份欄位（names/absence/mealQueue/guardTally/guard）無逐項 ts、raw 原文不同步、站哨自動分配不看排休、`.gs` rebuild 凍結列權限例外等。
 
 ## 九、v9 追加：texts 字串上雲(M5) + 行動準據上傳 + bot 查詢/分類(M6)
 
@@ -222,7 +261,9 @@ git checkout <工作分支>
 
 ---
 
-## 八、測試與注意事項
+## 十一、測試與注意事項（通則）
+
+> 註：本檔章節順序是「零→一~七→九→十→十一」（九/十/十一 是主結構完成後陸續追加的，編號照時間走、沒有第八節，別找）。
 
 - **語法檢查**：`node --check core.js`；index/liff 的內嵌 script 抽出來各自 `node --check`（core.js 是主體，別忘了它）。
 - **等價性測試**（動 core.js/index.html 必跑）：見第二節，證明主 App 行為不變。
