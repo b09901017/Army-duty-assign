@@ -271,7 +271,9 @@ git checkout <工作分支>
 - **② 行動準據**＝`textBubbleBtn_` 秀 `guideText_(data,md)`：讀 `plans[md].schedule`(fallback `boards[md].schedule.items`) **完整重建**時間軸文字（`fmtRange_` 保留 `0600-0630` 起訖、含無時間的行）；按鈕「視覺化呈現」→ `view=A`（當天流程）。雲端沒存準據 raw，用 items 還原；夠忠實。
 - **③ 個人分工**＝`textBubbleBtn_` 秀 `texts[md].persons`；按鈕「視覺化呈現」→ `view=B`（八人分工）。
 - **④ 八人時段表**＝`imageBubble_`：**標題在上→圖片在中→「看完整」在下**。圖片放 **body 的 image component**（不是 hero，hero 一定在最頂、標題會被壓下去）。固定圖 `data/schedule8.jpg`（543×1280，`aspectRatio:'543:1280' aspectMode:'cover'`）；按鈕「看完整」→ `view=C`。**不是截圖**，一張放進 repo、GitHub Pages 服務的公開圖 → 繞過 §7.6 圖床難題。圖網址可用 Script Property **`SCHED_IMG_URL`** 覆蓋（換圖即時生效不用重部署）；設 `none`/`off` 退回文字預覽卡（`previewBubble_`）。
-- **尺寸**：4 張一律 **`kilo`**（比 mega 再小一格，使用者要求）。
+- **①② 秀「班長原文」**：`rawByType_(md,type)` 從 `inbox` 分頁（存過的貼文原文）由新到舊撈 type 相符、`extractDate_`＝md 的那筆 → **完整呈現班長傳的公版／準據原始文字**（含衛哨區塊、emoji、原排版）。沒有 raw 才退回 `texts.filled`／`guideText_` 重建。註：群組貼文已不存 inbox（見 (6)），raw 來自**私訊 bot 貼的公版／準據**（排班/上傳的正常流程本來就會貼），故通常有。
+- **尺寸**：4 張一律 **`mega`**（使用者原要求「小一格」＝kilo 會變窄不是變短，故改回 mega 維持寬度）。
+- **④ 圖片大小**：body image `size:'60%' align:'center'`（不是 `full`），避免 543×1280 直式圖把卡片拉太長；比例仍 `543:1280 cover`（不裁切），點圖／看完整開 LIFF 完整檢視。想調大小改這個 `%`。
 - **⚠️ carousel bubble 尺寸鐵則（踩過坑，別再犯）**：LINE 規定 **carousel 裡不能有 `giga`，且所有 bubble 必須同一尺寸**，違反→整則 Flex 被打回 400、`reply_` 因 `muteHttpExceptions` 靜默吞掉→使用者端「打行程毫無反應」（查了老半天）。曾把文字卡做成 `giga`＋其餘 `kilo`（混尺寸＋含 giga）中這坑。改卡片時務必**全部同尺寸、別用 giga**。
 - stub 測 20 項全過（4 張/kilo 同尺寸/無 giga/各卡標題與內容/三張視覺化按鈕→C/A/B/圖片卡標題在上圖在下無 hero/看完整→C/Flex<50KB）＋群組路由回歸 9 項全過。
 - ⚠️ 部署：**圖片要進 main**（GitHub Pages 才服務得到 `data/schedule8.jpg`，否則圖 404），且 **webhook 那份 Apps Script 要重新部署**（新版本）才生效。core.js/index.html 沒動、主 App 不用重傳。
