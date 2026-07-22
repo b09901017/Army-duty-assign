@@ -123,8 +123,10 @@ function handleEvent_(ev){
     reply_(token, [introMsg_()]);              // 一對一 → 給選單引導
     return;
   }
+  // 群組：貼上完整公版／行動準據一律不回覆（群組只提供查詢資訊，不洗版）。
+  // 要拿排班／上傳按鈕，請私訊 bot（一對一）貼公版。
+  if(isGroup) return;
   if(!allowedEdit_(uid)){
-    if(isGroup) return;                        // 群組裡非編輯者貼原文 → 安靜（避免洗版）
     reply_(token, [textMsg_('你不是排班負責人。看結果可以打「公版」「分工」「行程」；想排班就打「代碼」拿代碼給班頭開通。')]);
     return;
   }
