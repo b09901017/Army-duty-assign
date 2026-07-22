@@ -29,6 +29,9 @@
  *                      不用填這裡，用「開通 代碼」由機器人加進 editors 分頁。
  *      APP_URL       =（選填）完整版 App 網址；不填用預設 github.io 那條。
  *      OWNER_NAME    =（選填）班頭名字，隨機碼提示「請貼給 XXX」用；預設「旭辰」。
+ *      SCHED_IMG_URL =（選填）行程 carousel「八人時段表」那張的固定圖片網址；
+ *                      不填用預設 github.io 上的 data/schedule8.jpg。改值即時生效、
+ *                      不用重部署。要退回文字預覽卡：把值設成 none（或 off）。
  *   分頁：inbox、codes（代碼↔uid）、editors（編輯者）、members（群組認人）自動建。
  * C. 部署 → 新增部署作業 → 類型「網頁應用程式」：
  *      執行身分＝我；存取權＝任何人 → 部署，取得 /exec 網址。
@@ -123,8 +126,10 @@ function handleEvent_(ev){
     reply_(token, [introMsg_()]);              // 一對一 → 給選單引導
     return;
   }
+  // 群組：貼上完整公版／行動準據一律不回覆（群組只提供查詢資訊，不洗版）。
+  // 要拿排班／上傳按鈕，請私訊 bot（一對一）貼公版。
+  if(isGroup) return;
   if(!allowedEdit_(uid)){
-    if(isGroup) return;                        // 群組裡非編輯者貼原文 → 安靜（避免洗版）
     reply_(token, [textMsg_('你不是排班負責人。看結果可以打「公版」「分工」「行程」；想排班就打「代碼」拿代碼給班頭開通。')]);
     return;
   }
@@ -236,17 +241,73 @@ function previewBubble_(md, title, rows, url, accent){
     ]}
   };
 }
+/* 時間範圍格式化：0600-0630→06:00-06:30、0530→05:30、無→'' */
+function fmtRange_(range){
+  var s = String(range || '').replace(/\s/g, '');
+  var m = s.match(/(\d{3,4})\s*[-~]\s*(\d{3,4})/); if(m) return hm2_(m[1]) + '-' + hm2_(m[2]);
+  var m2 = s.match(/(\d{3,4})/);                    return m2 ? hm2_(m2[1]) : '';
+}
+/* 行動準據完整重建：讀 plans/boards 的 schedule items（含無時間的行），還原成班長給的時間軸文字 */
+function guideText_(data, md){
+  var plan = (data.plans || {})[md] || null, board = (data.boards || {})[md] || null;
+  var sched = (plan && plan.schedule) || (board && board.schedule && board.schedule.items) || [];
+  if(!sched.length) return '';
+  return sched.map(function(it){
+    var t = fmtRange_(it.range || ''), tx = String(it.text || '');
+    return t ? (t + '　' + tx) : tx;
+  }).filter(function(s){ return s.replace(/\s/g, ''); }).join('\n');
+}
+/* 純文字整段卡（完整勤務／完整準據）：一整塊 wrap 文字，和班長給的一樣、不上色 */
+function textBubble_(md, title, bodyText, accent){
+  return {
+    type: 'bubble', size: 'giga',
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+      { type: 'text', text: dateTag_(md), size: 'xs', color: '#6C7268' },
+      { type: 'text', text: title, weight: 'bold', size: 'lg', color: accent },
+      { type: 'separator', margin: 'md' },
+      { type: 'text', text: (bodyText || '（目前沒有內容）'), size: 'sm', color: '#20261E', wrap: true, margin: 'md' }
+    ]}
+  };
+}
+/* 圖片卡（八人時段表）：固定圖片當 hero ＋「看完整」開 LIFF view=C */
+function imageBubble_(md, title, imgUrl, url, accent){
+  return {
+    type: 'bubble', size: 'kilo',
+    hero: { type: 'image', url: imgUrl, size: 'full', aspectRatio: '543:1280', aspectMode: 'cover', action: { type: 'uri', uri: url } },
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+      { type: 'text', text: dateTag_(md), size: 'xs', color: '#6C7268' },
+      { type: 'text', text: title, weight: 'bold', size: 'lg', color: accent }
+    ]},
+    footer: { type: 'box', layout: 'vertical', contents: [
+      { type: 'button', style: 'primary', color: accent, height: 'sm', action: { type: 'uri', label: '看完整', uri: url } }
+    ]}
+  };
+}
 function carouselSchedule_(md, data){
   data = data || syncData_();
   var pv = dayPreview_(data, md);
   var base = 'https://liff.line.me/' + prop_('LIFF_ID') + '?type=view&date=' + encodeURIComponent(md), MAX = 7;
-  var cRows = pv.byTime.slice(0, MAX).map(function(e){ return rowTimeText_(e.t, e.label + (e.who ? ('　' + e.who) : ''), '#2A4634'); });
   var aRows = pv.schedRows.slice(0, MAX).map(function(r){ return rowTimeText_(r.t, r.text, '#A9793F'); });
   var bRows = pv.byPerson.map(function(p){ return rowPerson_(p.code, p.name, p.items); });
+  var cRows = pv.byTime.slice(0, MAX).map(function(e){ return rowTimeText_(e.t, e.label + (e.who ? ('　' + e.who) : ''), '#2A4634'); });
+
+  var filled = ((data.texts || {})[md] || {}).filled || '（' + md + ' 還沒排好勤務，先在排班頁排好、按發送）';
+  var guide  = guideText_(data, md) || '（' + md + ' 還沒有行動準據，先上傳準據）';
+  // 固定圖片網址可用 Script Property SCHED_IMG_URL 覆蓋（換圖不用重部署）
+  var imgUrl = prop_('SCHED_IMG_URL');
+  if(imgUrl === '') imgUrl = 'https://b09901017.github.io/Army-duty-assign/data/schedule8.jpg';   // 沒設＝用預設圖
+  if(/^(none|off|no|文字|預覽)$/i.test(imgUrl)) imgUrl = '';                                        // 明確設 none/off＝退回文字預覽卡
+  var b3 = imgUrl
+    ? imageBubble_(md, '八人時段表', imgUrl, base + '&view=C', '#2A4634')
+    : previewBubble_(md, '八人時段表', cRows, base + '&view=C', '#2A4634');
+
+  // 使用者要的順序：①完整勤務 ②行動準據 ③八人時段表(圖) ④當天流程 ⑤八人分工
   var bubbles = [
-    previewBubble_(md, '八人時段表', cRows, base + '&view=C', '#2A4634'),   // 使用者要的順序：時段表→流程→分工
-    previewBubble_(md, '當天流程',   aRows, base + '&view=A', '#A9793F'),
-    previewBubble_(md, '八人分工',   bRows, base + '&view=B', '#5479A6')
+    textBubble_(md, '完整勤務', filled, '#2A4634'),
+    textBubble_(md, '行動準據', guide, '#A9793F'),
+    b3,
+    previewBubble_(md, '當天流程', aRows, base + '&view=A', '#A9793F'),
+    previewBubble_(md, '八人分工', bRows, base + '&view=B', '#5479A6')
   ];
   return { type: 'flex', altText: md + ' 行程', contents: { type: 'carousel', contents: bubbles } };
 }

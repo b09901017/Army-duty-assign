@@ -259,6 +259,22 @@ git checkout <工作分支>
 - **「關燈」→ 隨機抽班上一人 @他**：`members` 分頁被動認人（群組有人講話就 `getGroupMemberProfile` 記 uid↔顯示名，記過跳過不重打 API）；`lightsOut_` 從該群隨機抽、真 mention（`mentionees` index/length/userId）；`cleanName_`「261-05廖翊滕」→「廖翊滕」；沒認到人 fallback 純文字抽 `ROSTER`。
 - 新屬性 `OWNER_NAME`；新分頁 `members`。stub 測 15 項（carousel 預覽/文案/關燈真 mention/認人/fallback）全過。
 
+### (6) 追加優化（第三批）：群組貼公版/準據一律安靜
+- **需求**：群組裡只提供「查詢資訊」（公版/分工/行程），使用者貼上完整公版或行動準據時 bot 不再回「接到公版了／收到行動準據」的 Flex（避免洗版）。要拿排班／上傳按鈕改成**私訊 bot**（一對一）貼公版。
+- **改法**（`handleEvent_`）：`classifyText_` 判出 `gongban`/`guide` 後，在編輯者檢查**之前**加一行 `if(isGroup) return;`——群組貼原文一律不回、也不存 inbox（存了也沒按鈕可開，沒意義）。一對一維持原本「編輯者→給 Flex 按鈕、非編輯者→提示拿代碼」。
+- **不影響查詢**：查詢在 `parseQuery_`／`answerQuery_`（更前面就攔截），單行的「公版/分工/行程」在群組照樣回。`classifyText_` 只吃「多行原文」。
+- stub 路由測 9 項全過（群組貼公版/準據＝靜、群組查行程/公版/分工＝回、群組閒聊＝靜、私訊貼公版/準據＝給按鈕、私訊閒聊＝選單）。
+- ⚠️ 改了 `.gs`，**使用者要重新部署那份 webhook Apps Script**（管理部署→編輯→新版本→部署，網址不變）才生效。
+### (7) 行程 carousel 改 5 張＋固定圖片（webhook）
+- **順序改成 5 張**：①完整勤務 ②行動準據 ③八人時段表(圖) ④當天流程 ⑤八人分工。使用者要「勤務／準據並排左右滑，不用上下滑長訊息」。
+- **① 完整勤務**＝`textBubble_`（giga 純文字卡）直接秀 `texts[md].filled`（填好名字的公版，和班長給的一模一樣、不上色）。沒資料→提示先排班。
+- **② 行動準據**＝`textBubble_` 秀 `guideText_(data,md)`：讀 `plans[md].schedule`(fallback `boards[md].schedule.items`) **完整重建**時間軸文字（`fmtRange_` 保留 `0600-0630` 起訖、含無時間的行）。雲端沒存準據 raw，用 items 還原；夠忠實。沒資料→提示先上傳準據。
+- **③ 八人時段表**＝`imageBubble_`：hero 放**固定圖片**（`data/schedule8.jpg`，543×1280，`aspectRatio:'543:1280' aspectMode:'cover'`）＋「看完整」開 LIFF `view=C`。**不是截圖**，就一張放進 repo、GitHub Pages 服務的公開圖 → 繞過 §7.6 圖床難題。圖網址可用 Script Property **`SCHED_IMG_URL`** 覆蓋（換圖即時生效不用重部署）；設 `none`/`off` 退回文字預覽卡。
+- **④當天流程 / ⑤八人分工**＝維持原 `previewBubble_`（view=A / view=B），內容不變。
+- stub 測 16 項全過（5 張/各標題/準據重建含起訖與無時間行/圖片 hero＋預設網址＋比例＋view=C/當天流程 view=A/分工 view=B/Flex 總大小 5.4KB<50KB）。
+- ⚠️ 部署：**圖片要進 main**（GitHub Pages 才服務得到 `data/schedule8.jpg`，否則 hero 404），且 **webhook 那份 Apps Script 要重新部署**（新版本）才有 5 張。core.js/index.html 沒動、主 App 不用重傳。
+- 註：另檢查過「公版裡的衛哨會不會覆蓋站哨分頁」——**不會**。`parseGongban` 產生 `state.duties`、站哨在 `state.guard`，兩者分離；且衛哨行（`🔵衛哨：` 底下的 `2402…`/日期範圍）本來就被當 static、不產生勤務、不進統計（用 26 份真實公版驗過，含哨勤務數＝0）。曾試著加「衛哨區塊守衛」硬擋，但等價測試抓到會誤吞衛哨區塊後面接的 `打靶*10員：` 等正常勤務（那些區塊沒有 🔷/🔵 標題分隔），故**不改 core.js**——現況已符合「站哨只在站哨分頁排」。
+
 ---
 
 ## 十一、測試與注意事項（通則）
