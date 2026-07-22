@@ -257,8 +257,19 @@ function guideText_(data, md){
     return t ? (t + '　' + tx) : tx;
   }).filter(function(s){ return s.replace(/\s/g, ''); }).join('\n');
 }
-/* 純文字整段卡（完整勤務／完整準據）：一整塊 wrap 文字，和班長給的一樣、不上色 */
-function textBubble_(md, title, bodyText, accent){
+/* 從 inbox 撈「班長傳的原文」：由新到舊找 type 相符、且原文日期＝md 的那筆（完整呈現班長原文用） */
+function rawByType_(md, type){
+  try{
+    var sh = inbox_(), d = sh.getDataRange().getValues();
+    for(var i = d.length - 1; i >= 1; i--){
+      var t = String(d[i][1] || '');
+      if(String(d[i][4] || 'gongban') === type && extractDate_(t) === md) return t;
+    }
+  }catch(e){}
+  return '';
+}
+/* 純文字整段卡（完整勤務／行動準據／個人分工）：一整塊 wrap 文字＋底部「視覺化呈現」按鈕連 LIFF */
+function textBubbleBtn_(md, title, bodyText, btnLabel, url, accent){
   return {
     type: 'bubble', size: 'mega',
     body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
@@ -266,20 +277,23 @@ function textBubble_(md, title, bodyText, accent){
       { type: 'text', text: title, weight: 'bold', size: 'lg', color: accent },
       { type: 'separator', margin: 'md' },
       { type: 'text', text: (bodyText || '（目前沒有內容）'), size: 'sm', color: '#20261E', wrap: true, margin: 'md' }
+    ]},
+    footer: { type: 'box', layout: 'vertical', contents: [
+      { type: 'button', style: 'primary', color: accent, height: 'sm', action: { type: 'uri', label: btnLabel, uri: url } }
     ]}
   };
 }
-/* 圖片卡（八人時段表）：固定圖片當 hero ＋「看完整」開 LIFF view=C */
-function imageBubble_(md, title, imgUrl, url, accent){
+/* 圖片卡（八人時段表）：上面標題→中間固定圖片→底部「看完整」按鈕（圖放 body、不放 hero，才能標題在上） */
+function imageBubble_(md, title, imgUrl, btnLabel, url, accent){
   return {
     type: 'bubble', size: 'mega',
-    hero: { type: 'image', url: imgUrl, size: 'full', aspectRatio: '543:1280', aspectMode: 'cover', action: { type: 'uri', uri: url } },
     body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
       { type: 'text', text: dateTag_(md), size: 'xs', color: '#6C7268' },
-      { type: 'text', text: title, weight: 'bold', size: 'lg', color: accent }
+      { type: 'text', text: title, weight: 'bold', size: 'lg', color: accent },
+      { type: 'image', url: imgUrl, size: '60%', aspectRatio: '543:1280', aspectMode: 'cover', align: 'center', margin: 'md', action: { type: 'uri', uri: url } }
     ]},
     footer: { type: 'box', layout: 'vertical', contents: [
-      { type: 'button', style: 'primary', color: accent, height: 'sm', action: { type: 'uri', label: '看完整', uri: url } }
+      { type: 'button', style: 'primary', color: accent, height: 'sm', action: { type: 'uri', label: btnLabel, uri: url } }
     ]}
   };
 }
@@ -287,27 +301,28 @@ function carouselSchedule_(md, data){
   data = data || syncData_();
   var pv = dayPreview_(data, md);
   var base = 'https://liff.line.me/' + prop_('LIFF_ID') + '?type=view&date=' + encodeURIComponent(md), MAX = 7;
-  var aRows = pv.schedRows.slice(0, MAX).map(function(r){ return rowTimeText_(r.t, r.text, '#A9793F'); });
-  var bRows = pv.byPerson.map(function(p){ return rowPerson_(p.code, p.name, p.items); });
   var cRows = pv.byTime.slice(0, MAX).map(function(e){ return rowTimeText_(e.t, e.label + (e.who ? ('　' + e.who) : ''), '#2A4634'); });
 
-  var filled = ((data.texts || {})[md] || {}).filled || '（' + md + ' 還沒排好勤務，先在排班頁排好、按發送）';
-  var guide  = guideText_(data, md) || '（' + md + ' 還沒有行動準據，先上傳準據）';
+  var texts   = (data.texts || {})[md] || {};
+  // 完整勤務／行動準據：優先秀「班長傳的原文」（inbox raw），沒有才退回填好公版／重建準據
+  var filled  = rawByType_(md, 'gongban') || texts.filled || '（' + md + ' 還沒有公版，先私訊 bot 貼公版）';
+  var guide   = rawByType_(md, 'guide')   || guideText_(data, md) || '（' + md + ' 還沒有行動準據，先私訊 bot 貼準據）';
+  var persons = texts.persons || '（' + md + ' 還沒有個人分工，先在排班頁排好、按發送）';
   // 固定圖片網址可用 Script Property SCHED_IMG_URL 覆蓋（換圖不用重部署）
   var imgUrl = prop_('SCHED_IMG_URL');
   if(imgUrl === '') imgUrl = 'https://b09901017.github.io/Army-duty-assign/data/schedule8.jpg';   // 沒設＝用預設圖
   if(/^(none|off|no|文字|預覽)$/i.test(imgUrl)) imgUrl = '';                                        // 明確設 none/off＝退回文字預覽卡
-  var b3 = imgUrl
-    ? imageBubble_(md, '八人時段表', imgUrl, base + '&view=C', '#2A4634')
+  var card4 = imgUrl
+    ? imageBubble_(md, '八人時段表', imgUrl, '看完整', base + '&view=C', '#2A4634')
     : previewBubble_(md, '八人時段表', cRows, base + '&view=C', '#2A4634');
 
-  // 使用者要的順序：①完整勤務 ②行動準據 ③八人時段表(圖) ④當天流程 ⑤八人分工
+  // 4 張：①完整勤務→視覺化(八人時段表 view=C) ②行動準據→視覺化(當天流程 view=A)
+  //       ③個人分工→視覺化(八人分工 view=B) ④八人時段表(圖)→看完整(view=C)
   var bubbles = [
-    textBubble_(md, '完整勤務', filled, '#2A4634'),
-    textBubble_(md, '行動準據', guide, '#A9793F'),
-    b3,
-    previewBubble_(md, '當天流程', aRows, base + '&view=A', '#A9793F'),
-    previewBubble_(md, '八人分工', bRows, base + '&view=B', '#5479A6')
+    textBubbleBtn_(md, '完整勤務', filled,  '視覺化呈現', base + '&view=C', '#2A4634'),
+    textBubbleBtn_(md, '行動準據', guide,   '視覺化呈現', base + '&view=A', '#A9793F'),
+    textBubbleBtn_(md, '個人分工', persons, '視覺化呈現', base + '&view=B', '#5479A6'),
+    card4
   ];
   return { type: 'flex', altText: md + ' 行程', contents: { type: 'carousel', contents: bubbles } };
 }
