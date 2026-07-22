@@ -213,6 +213,13 @@ git checkout <工作分支>
 - liff：view=A/B/C 唯讀 render（_mode/readOnly/標頭/資料/無發送鈕/不丟例外）＋沒資料提示；Chromium 實截 modeC 檢視頁。
 - ⚠️ 部署：webhook 改了要**重新部署 Apps Script**；liff 改了要 merge 到 main（Pages）。LINE 後台要開「允許加入群組」並把 bot 加進群組。
 
+### (5) 追加優化（第二批）
+- **carousel 三頁改「預覽內容」**：`dayPreview_` 讀 sync `data` 的 `plans[md]`（fallback `boards[md]`）→ 八人時段表(byTime，事件依時間)/當天流程(schedule 準則)/八人分工(byPerson，每人勤務) 三種預覽，塞進 kilo bubble body（`rowTimeText_`/`rowPerson_`），底部「看完整」開 LIFF view。順序＝時段表→流程→分工。
+- **代碼觸發改「開通編輯權限」**，回覆改「為您生成隨機碼：K-XXXX\n請貼給 {OWNER_NAME}」（屬性 `OWNER_NAME` 預設「旭辰」）；owner 打→「你已經有排班權限了」。
+- **@提及/指令 回覆改「到底是哪裡有問題 🤨」** + quick reply（含「開通編輯權限」「關燈」）。
+- **「關燈」→ 隨機抽班上一人 @他**：`members` 分頁被動認人（群組有人講話就 `getGroupMemberProfile` 記 uid↔顯示名，記過跳過不重打 API）；`lightsOut_` 從該群隨機抽、真 mention（`mentionees` index/length/userId）；`cleanName_`「261-05廖翊滕」→「廖翊滕」；沒認到人 fallback 純文字抽 `ROSTER`。
+- 新屬性 `OWNER_NAME`；新分頁 `members`。stub 測 15 項（carousel 預覽/文案/關燈真 mention/認人/fallback）全過。
+
 ---
 
 ## 八、測試與注意事項
