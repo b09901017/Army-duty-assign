@@ -290,7 +290,7 @@ function imageBubble_(md, title, imgUrl, btnLabel, url, accent){
     body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
       { type: 'text', text: dateTag_(md), size: 'xs', color: '#6C7268' },
       { type: 'text', text: title, weight: 'bold', size: 'lg', color: accent },
-      { type: 'image', url: imgUrl, size: '60%', aspectRatio: '543:1280', aspectMode: 'cover', align: 'center', margin: 'md', action: { type: 'uri', uri: url } }
+      { type: 'image', url: imgUrl, size: '70%', aspectRatio: '543:1280', aspectMode: 'cover', align: 'center', margin: 'md', action: { type: 'uri', uri: url } }
     ]},
     footer: { type: 'box', layout: 'vertical', contents: [
       { type: 'button', style: 'primary', color: accent, height: 'sm', action: { type: 'uri', label: btnLabel, uri: url } }
@@ -304,9 +304,12 @@ function carouselSchedule_(md, data){
   var cRows = pv.byTime.slice(0, MAX).map(function(e){ return rowTimeText_(e.t, e.label + (e.who ? ('　' + e.who) : ''), '#2A4634'); });
 
   var texts   = (data.texts || {})[md] || {};
-  // 完整勤務／行動準據：優先秀「班長傳的原文」（inbox raw），沒有才退回填好公版／重建準據
-  var filled  = rawByType_(md, 'gongban') || texts.filled || '（' + md + ' 還沒有公版，先私訊 bot 貼公版）';
-  var guide   = rawByType_(md, 'guide')   || guideText_(data, md) || '（' + md + ' 還沒有行動準據，先私訊 bot 貼準據）';
+  var board   = (data.boards || {})[md] || {};
+  // ①完整勤務＝填好名字的完整公版（texts.filled）
+  var filled  = texts.filled || '（' + md + ' 還沒排好勤務，先在排班頁排好、按發送）';
+  // ②行動準據＝班長準據原文：優先雲端 schedule.raw（App/LIFF 上傳的原文）→ inbox 私訊原文 → 重建 → 提示
+  var guide   = (board.schedule && board.schedule.raw) || rawByType_(md, 'guide') || guideText_(data, md) || '（' + md + ' 還沒有行動準據，先在排班頁貼準據、或私訊 bot 貼準據）';
+  // ③個人分工＝texts.persons
   var persons = texts.persons || '（' + md + ' 還沒有個人分工，先在排班頁排好、按發送）';
   // 固定圖片網址可用 Script Property SCHED_IMG_URL 覆蓋（換圖不用重部署）
   var imgUrl = prop_('SCHED_IMG_URL');

@@ -144,7 +144,7 @@ function slimBoards(){
   for(var d in state.boards){var b=state.boards[d];if(!b)continue;
     var sc=b.schedule||{};
     out[d]={meta:b.meta||[],duties:b.duties||[],wd:b.wd||"",committed:!!b.committed,imported:!!b.imported,ts:b.ts||0,
-      schedule:{items:(sc.items||[]),title:sc.title||"",date:sc.date||"",loaded:!!(sc.items&&sc.items.length)}};
+      schedule:{items:(sc.items||[]),title:sc.title||"",date:sc.date||"",loaded:!!(sc.items&&sc.items.length),raw:sc.raw||""}};   // 準據原文 raw 一起上雲（給 LINE bot「行程」完整呈現行動準據）
   }
   return out;
 }
@@ -169,7 +169,7 @@ function mergeBoards(rem,tomb,wipe){
     var sc=win.schedule||{};
     out[d]={meta:win.meta||[],duties:win.duties||[],wd:win.wd||"",committed:!!win.committed,imported:!!win.imported,ts:Math.max(lts,rts),
       raw:(loc&&loc.raw)||"",  // 原文只存本機，雲端不傳，合併時保留
-      schedule:{items:sc.items||[],title:sc.title||"",date:sc.date||"",loaded:!!(sc.items&&sc.items.length),raw:(loc&&loc.schedule&&loc.schedule.raw)||""}};
+      schedule:{items:sc.items||[],title:sc.title||"",date:sc.date||"",loaded:!!(sc.items&&sc.items.length),raw:sc.raw||(loc&&loc.schedule&&loc.schedule.raw)||""}};   // 準據原文：優先取合併勝方(含雲端)的 raw，其次本機（讓別台上傳的準據原文也傳得過來）
   }
   return out;
 }
