@@ -8,12 +8,14 @@
  *   3) liff.html 用 doGet?key=xxx 拿回原文（回 {text,type}）；doGet?canedit=uid
  *      回 {edit:bool}（liff 動態問這個人能不能編輯）。
  *   4) 查詢（看結果，全群開放）：「公版」「分工」回文字；「行程」回 carousel
- *      三頁（八人時段表/當天流程/八人分工）→ 各自開 LIFF 唯讀檢視。可加日期。
+ *      三頁，每頁「預覽內容」（八人時段表/當天流程/八人分工）＋「看完整」開
+ *      LIFF 唯讀檢視。可加日期。
  *   5) 情境：群組預設安靜，只回查詢/指令/@提及/語音；一對一你一句他一句。
  *   6) 權限拆分：看結果全開；排班/上傳＝owner(ALLOW_UIDS)＋機器人管理的
- *      editors 名單。隊友打「代碼」拿友善代碼→貼給班頭→班頭打「開通 代碼」。
+ *      editors 名單。隊友打「開通編輯權限」→拿隨機碼→貼給班頭→班頭打
+ *      「開通 K-XXXX」。
  *   7) @提及機器人／「指令」→ 選單(quick reply)；語音→「浩ㄏㄠˇ～」；
- *      「app」→ 完整版 App 網址。
+ *      「app」→ 完整版 App 網址；「關燈」→ 隨機抽班上一人 @他去關燈。
  *   · 公版/準據判斷：classifyText_（🔷/勤務→公版；行動準據/時間軸→準據）。
  *
  * ── 部署步驟 ──────────────────────────────────────────────
@@ -26,7 +28,8 @@
  *      ALLOW_UIDS    = 「班頭」的 LINE userId，逗號分隔；空＝測試全開。其他編輯者
  *                      不用填這裡，用「開通 代碼」由機器人加進 editors 分頁。
  *      APP_URL       =（選填）完整版 App 網址；不填用預設 github.io 那條。
- *   分頁：inbox（公版/準據暫存）、codes（代碼↔uid）、editors（編輯者）自動建。
+ *      OWNER_NAME    =（選填）班頭名字，隨機碼提示「請貼給 XXX」用；預設「旭辰」。
+ *   分頁：inbox、codes（代碼↔uid）、editors（編輯者）、members（群組認人）自動建。
  * C. 部署 → 新增部署作業 → 類型「網頁應用程式」：
  *      執行身分＝我；存取權＝任何人 → 部署，取得 /exec 網址。
  * D. 把 /exec 網址：
@@ -39,6 +42,13 @@
 
 function props_(){ return PropertiesService.getScriptProperties(); }
 function prop_(k){ return props_().getProperty(k) || ''; }
+
+/* 261 班名冊（關燈抽人、名字清理用）；班頭名字可用 OWNER_NAME 屬性覆蓋 */
+var ROSTER = [
+  { code:'01', name:'李愷宸' }, { code:'02', name:'江偉綸' }, { code:'03', name:'陳柏翰' }, { code:'04', name:'鄧旭辰' },
+  { code:'05', name:'廖翊滕' }, { code:'06', name:'陳俊穎' }, { code:'07', name:'林柏宇' }, { code:'08', name:'林崇浩' }
+];
+function ownerName_(){ return prop_('OWNER_NAME') || '旭辰'; }
 
 function ss_(){ return SpreadsheetApp.openById(prop_('SHEET_ID')); }
 function inbox_(){
@@ -75,6 +85,7 @@ function doPost(e){
 function handleEvent_(ev){
   if(!ev || ev.type !== 'message') return;
   var src = ev.source || {}, ctype = src.type || 'user', isGroup = (ctype === 'group' || ctype === 'room');
+  var gid = src.groupId || src.roomId || '';
   var uid = src.userId || '', token = ev.replyToken, msg = ev.message || {};
 
   // 語音訊息 → 彩蛋（群組＋一對一都回）
@@ -82,13 +93,19 @@ function handleEvent_(ev){
   if(msg.type !== 'text') return;
   var text = (msg.text || '').trim();
 
+  // 被動認人：群組裡有人講話就記下 uid↔顯示名（給「關燈」@人用；已記過就跳過不再打 API）
+  if(ctype === 'group' && gid && uid) learnMember_(gid, uid);
+
   // @提及機器人 → 出來說話 + 指令快捷（主要用在群組）
   if(isMentioned_(msg)){ reply_(token, [introMsg_()]); return; }
 
+  // 關燈 → 隨機抽一個班上的人 @他去關燈
+  if(/^(關燈|關電燈|關個燈|誰去?關燈)$/.test(text)){ lightsOut_(gid, ctype, token); return; }
+
   // ── 身分／管理指令（不分群組或一對一）──
-  if(/^(whoami|代碼|我的(id|userid|代碼|碼)|拿代碼)$/i.test(text)){ reply_(token, [textMsg_(myCode_(uid))]); return; }
-  if(/^開通(\s|$)/.test(text)){ grantCmd_(text, uid, token, isGroup); return; }
-  if(/^(移除|停權)(\s|$)/.test(text)){ revokeCmd_(text, uid, token, isGroup); return; }
+  if(/^(開通編輯權限|申請(編輯|排班)?權限|代碼|我要排班|whoami|我的(id|userid|代碼|碼))$/i.test(text)){ reply_(token, [textMsg_(myCode_(uid))]); return; }
+  if(/^開通\s+\S/.test(text)){ grantCmd_(text, uid, token, isGroup); return; }        // 開通 K-XXXX（要空格＋代碼）
+  if(/^(移除|停權)\s+\S/.test(text)){ revokeCmd_(text, uid, token, isGroup); return; }
   if(/^(名單|編輯名單|editors)$/i.test(text)){ listEditorsCmd_(uid, token, isGroup); return; }
 
   // ── 說明／App 連結 ──
@@ -159,7 +176,7 @@ function answerQuery_(q, token){
   if(q.kind === 'schedule'){
     var has = (data.texts && data.texts[q.md]) || (data.boards && data.boards[q.md]) || (data.plans && data.plans[q.md]);
     if(!has){ reply_(token, [textMsg_('還沒有 ' + q.md + ' 的行程。先在 App 排好、按發送就會有了。')]); return; }
-    reply_(token, [carouselSchedule_(q.md)]); return;
+    reply_(token, [carouselSchedule_(q.md, data)]); return;
   }
   var rec = (data.texts || {})[q.md];
   if(!rec){ reply_(token, [textMsg_('還沒有 ' + q.md + ' 的資料。先在排班頁排好、按「發送」就會存起來，之後就查得到了。')]); return; }
@@ -167,38 +184,80 @@ function answerQuery_(q, token){
   if(!out){ reply_(token, [textMsg_(q.md + ' 目前沒有' + (q.kind === 'persons' ? '個人分工' : '填好的公版') + '。')]); return; }
   reply_(token, [textMsg_(out)]);
 }
-/* 行程 carousel：三頁 kilo bubble，各自開 LIFF 唯讀檢視（八人時段表/當天流程/八人分工） */
-function carouselSchedule_(md){
-  var base = 'https://liff.line.me/' + prop_('LIFF_ID') + '?type=view&date=' + encodeURIComponent(md);
-  var views = [
-    ['C', '八人時段表', '每個人幾點做什麼，一眼看完'],
-    ['A', '當天流程',   '時間軸：起床→升旗→用餐…'],
-    ['B', '八人分工',   '每個人今天被派到的勤務']
-  ];
-  var bubbles = views.map(function(v){ return viewBubble_(md, v[1], v[2], base + '&view=' + v[0]); });
-  return { type: 'flex', altText: md + ' 行程', contents: { type: 'carousel', contents: bubbles } };
+/* ---------- 行程 carousel：三頁 kilo bubble，各自「預覽內容」＋按鈕開 LIFF 唯讀完整檢視 ---------- */
+function nm_(names, id){ return (names && names[id]) ? names[id] : ('0' + id).slice(-2); }
+function short_(s){ s = String(s || ''); return s.length <= 2 ? s : s.slice(-2); }
+function hm2_(range){ var t = String(range || '').replace(/[^0-9]/g, '').slice(0, 4); if(t.length < 4) return t; var h = t.slice(0, 2); return (h === '24' ? '00' : h) + ':' + t.slice(2, 4); }
+function dayPreview_(data, md){
+  var names = data.names || {}, plan = (data.plans || {})[md] || null, board = (data.boards || {})[md] || null;
+  var sched = (plan && plan.schedule) || (board && board.schedule && board.schedule.items) || [];
+  var events = (plan && plan.events) || [];
+  var schedRows = sched.filter(function(it){ return it && it.min != null; }).sort(function(a, b){ return a.min - b.min; })
+    .map(function(it){ return { t: hm2_(it.range), text: String(it.text || '') }; });
+  var evs = events.slice().filter(function(e){ return e && ((e.people && e.people.length) || e.keepAll); })
+    .sort(function(a, b){ return (a.min == null ? 9999 : a.min) - (b.min == null ? 9999 : b.min); });
+  var byTime = evs.map(function(e){
+    var who = e.keepAll ? '全班' : (e.people || []).map(function(id){ return short_(nm_(names, id)); }).join(' ');
+    return { t: e.range ? hm2_(e.range) : '', label: String(e.label || ''), who: who };
+  });
+  var byPerson = [];
+  for(var pi = 1; pi <= 8; pi++){
+    var items = [];
+    evs.forEach(function(e){ if(e.keepAll || (e.people || []).indexOf(pi) >= 0) items.push(String(e.label || '')); });
+    byPerson.push({ code: ('0' + pi).slice(-2), name: nm_(names, pi), items: items });
+  }
+  return { schedRows: schedRows, byTime: byTime, byPerson: byPerson };
 }
-function viewBubble_(md, title, sub, url){
+function rowTimeText_(t, text, tcol){
+  return { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+    { type: 'text', text: (t || '—'), size: 'sm', color: (tcol || '#2A4634'), flex: 3, weight: 'bold' },
+    { type: 'text', text: (text || '—'), size: 'sm', color: '#20261E', flex: 7, wrap: true }
+  ]};
+}
+function rowPerson_(code, name, items){
+  return { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+    { type: 'text', text: code, size: 'sm', color: '#2A4634', flex: 2, weight: 'bold' },
+    { type: 'text', text: name + '　' + (items.length ? items.join('、') : '—'), size: 'sm', color: '#20261E', flex: 8, wrap: true }
+  ]};
+}
+function previewBubble_(md, title, rows, url, accent){
+  var body = [
+    { type: 'text', text: dateTag_(md), size: 'xs', color: '#6C7268' },
+    { type: 'text', text: title, weight: 'bold', size: 'lg', color: accent },
+    { type: 'separator', margin: 'md' }
+  ];
+  if(rows.length) rows.forEach(function(r){ body.push(r); });
+  else body.push({ type: 'text', text: '（這天沒有內容）', size: 'sm', color: '#6C7268', margin: 'md' });
   return {
     type: 'bubble', size: 'kilo',
-    body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
-      { type: 'text', text: dateTag_(md), size: 'xs', color: '#6C7268' },
-      { type: 'text', text: title, weight: 'bold', size: 'xl', color: '#2A4634' },
-      { type: 'text', text: sub, size: 'sm', color: '#6C7268', wrap: true }
-    ]},
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: body },
     footer: { type: 'box', layout: 'vertical', contents: [
-      { type: 'button', style: 'primary', color: '#2A4634', height: 'sm', action: { type: 'uri', label: '打開看', uri: url } }
+      { type: 'button', style: 'primary', color: accent, height: 'sm', action: { type: 'uri', label: '看完整', uri: url } }
     ]}
   };
+}
+function carouselSchedule_(md, data){
+  data = data || syncData_();
+  var pv = dayPreview_(data, md);
+  var base = 'https://liff.line.me/' + prop_('LIFF_ID') + '?type=view&date=' + encodeURIComponent(md), MAX = 7;
+  var cRows = pv.byTime.slice(0, MAX).map(function(e){ return rowTimeText_(e.t, e.label + (e.who ? ('　' + e.who) : ''), '#2A4634'); });
+  var aRows = pv.schedRows.slice(0, MAX).map(function(r){ return rowTimeText_(r.t, r.text, '#A9793F'); });
+  var bRows = pv.byPerson.map(function(p){ return rowPerson_(p.code, p.name, p.items); });
+  var bubbles = [
+    previewBubble_(md, '八人時段表', cRows, base + '&view=C', '#2A4634'),   // 使用者要的順序：時段表→流程→分工
+    previewBubble_(md, '當天流程',   aRows, base + '&view=A', '#A9793F'),
+    previewBubble_(md, '八人分工',   bRows, base + '&view=B', '#5479A6')
+  ];
+  return { type: 'flex', altText: md + ' 行程', contents: { type: 'carousel', contents: bubbles } };
 }
 /* 選單（@提及／help／一對一看不懂時）：介紹 + quick reply 指令快捷 */
 function introMsg_(){
   return {
     type: 'text',
-    text: '嗨，我是排勤務小幫手 🍔\n看結果打「公版」「分工」「行程」（可加日期，例：7/21 公版）。要完整版打「app」。',
+    text: '到底是哪裡有問題 🤨\n看結果打「公版」「分工」「行程」（可加日期，例：7/21 公版）。要完整版打「app」。',
     quickReply: { items: [
       qr_('今日公版', '公版'), qr_('今日分工', '分工'), qr_('今日行程', '行程'),
-      qr_('完整App', 'app'), qr_('拿代碼', '代碼'), qr_('指令說明', '指令')
+      qr_('完整App', 'app'), qr_('開通編輯權限', '開通編輯權限'), qr_('關燈', '關燈')
     ]}
   };
 }
@@ -249,9 +308,9 @@ function uidOfCode_(code){
 }
 function myCode_(uid){
   if(!uid) return '抓不到你的 LINE 身分（要用文字訊息，且我要在這個聊天室裡）。';
+  if(allowedEdit_(uid)) return '你已經有排班權限了 👍';
   var code = getOrMakeCode_(uid);
-  var mine = allowedEdit_(uid) ? '\n（你已經有排班權限了）' : '';
-  return '你的代碼：' + code + '\n把這串貼給班頭，他打「開通 ' + code + '」就能幫你開排班權限（不會看到你的個資）。' + mine;
+  return '為您生成隨機碼：' + code + '\n請貼給 ' + ownerName_();
 }
 function grantCmd_(text, uid, token, isGroup){
   if(!isOwner_(uid)){ if(!isGroup) reply_(token, [textMsg_('只有班頭能開通別人。')]); return; }
@@ -286,6 +345,45 @@ function isMentioned_(msg){
     for(var i = 0; i < m.mentionees.length; i++){ if(m.mentionees[i].isSelf === true) return true; }
   }catch(e){}
   return false;
+}
+
+/* ---------- 關燈：被動認人 + 隨機抽班上的人 @他 ---------- */
+function members_(){ var ss = ss_(), sh = ss.getSheetByName('members'); if(!sh){ sh = ss.insertSheet('members'); sh.appendRow(['gid','uid','name','ts']); } return sh; }
+function groupMemberName_(gid, uid){   // 呼叫 LINE getGroupMemberProfile 拿群組內顯示名
+  try{
+    var r = UrlFetchApp.fetch('https://api.line.me/v2/bot/group/' + gid + '/member/' + uid, {
+      headers: { Authorization: 'Bearer ' + prop_('CHANNEL_TOKEN') }, muteHttpExceptions: true
+    });
+    var o = JSON.parse(r.getContentText() || '{}');
+    return o.displayName || '';
+  }catch(e){ return ''; }
+}
+function cleanName_(dn){   // 「261-05廖翊滕」→「廖翊滕」；比對名冊，比對不到就原樣
+  dn = String(dn || '');
+  for(var i = 0; i < ROSTER.length; i++){ if(dn.indexOf(ROSTER[i].name) >= 0) return ROSTER[i].name; }
+  var m = dn.match(/261[\-\s]?\d{2}\s*(.+)$/); if(m) return m[1].trim();
+  return dn;
+}
+function learnMember_(gid, uid){
+  var sh = members_(), d = sh.getDataRange().getValues();
+  for(var i = 1; i < d.length; i++){ if(String(d[i][0]) === gid && String(d[i][1]) === uid) return; }   // 記過就跳過
+  var dn = groupMemberName_(gid, uid);
+  if(!dn) return;
+  sh.appendRow([gid, uid, dn, new Date().getTime()]);
+}
+function lightsOut_(gid, ctype, token){
+  var picks = [];
+  if(ctype === 'group' && gid){
+    var d = members_().getDataRange().getValues();
+    for(var i = 1; i < d.length; i++){ if(String(d[i][0]) === gid) picks.push({ uid: String(d[i][1]), name: String(d[i][2]) }); }
+  }
+  if(picks.length){
+    var p = picks[Math.floor(Math.random() * picks.length)], shown = cleanName_(p.name);
+    reply_(token, [{ type: 'text', text: '@' + shown + ' 去關燈💡', mention: { mentionees: [{ index: 0, length: shown.length + 1, userId: p.uid }] } }]);
+  }else{
+    var r = ROSTER[Math.floor(Math.random() * ROSTER.length)];
+    reply_(token, [textMsg_('抽到 ' + r.name + '，去關燈💡\n（他還沒在群組講過話，我 tag 不到本人，先靠你們喊他）')]);
+  }
 }
 
 /* ---------- inbox 清理 ---------- */
