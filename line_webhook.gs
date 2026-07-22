@@ -3,15 +3,18 @@
  *
  * 這是「LINE bot 後端」，跟管資料的 sync_AppsScript.gs 分開部署、互不干擾。
  * 功能：
- *   1) 轉傳「空白公版」→ 存 inbox 配 key，回 Flex 按鈕「排班」（連 LIFF）。
- *   2) 轉傳「行動準據」→ 存 inbox（type=guide），回 Flex 按鈕「上傳準據」
- *      （連 LIFF ?type=guide；點了在 LIFF 端解析日期、上傳雲端）。
- *   3) liff.html 用 doGet?key=xxx 拿回原文（回 {text,type}）。
- *   4) 查詢指令：「7/21 公版」「7/21 分工」「公版」「分工」→ 讀 sync 試算表
- *      data 分頁的 texts[日期] 回文字（要 App 先排好按發送才有）。
- *   5) 「whoami」回 userId；「指令/help」回說明。
- *   6) 白名單（ALLOW_UIDS）控管：名單外的人不給按鈕、不給查詢。
- *   · 公版/準據的判斷：classifyText_（🔷/勤務→公版；行動準據/時間軸→準據）。
+ *   1) 轉傳「空白公版」→（限編輯者）回 Flex 按鈕「排班」（連 LIFF）。
+ *   2) 轉傳「行動準據」→（限編輯者）回 Flex「上傳準據」（連 LIFF ?type=guide）。
+ *   3) liff.html 用 doGet?key=xxx 拿回原文（回 {text,type}）；doGet?canedit=uid
+ *      回 {edit:bool}（liff 動態問這個人能不能編輯）。
+ *   4) 查詢（看結果，全群開放）：「公版」「分工」回文字；「行程」回 carousel
+ *      三頁（八人時段表/當天流程/八人分工）→ 各自開 LIFF 唯讀檢視。可加日期。
+ *   5) 情境：群組預設安靜，只回查詢/指令/@提及/語音；一對一你一句他一句。
+ *   6) 權限拆分：看結果全開；排班/上傳＝owner(ALLOW_UIDS)＋機器人管理的
+ *      editors 名單。隊友打「代碼」拿友善代碼→貼給班頭→班頭打「開通 代碼」。
+ *   7) @提及機器人／「指令」→ 選單(quick reply)；語音→「浩ㄏㄠˇ～」；
+ *      「app」→ 完整版 App 網址。
+ *   · 公版/準據判斷：classifyText_（🔷/勤務→公版；行動準據/時間軸→準據）。
  *
  * ── 部署步驟 ──────────────────────────────────────────────
  * A. 開一個「新的」Apps Script 專案（script.google.com → 新專案），
@@ -20,7 +23,10 @@
  *      CHANNEL_TOKEN = LINE Messaging API 的 Channel access token(long-lived)
  *      SHEET_ID      = 你那份 Google 試算表的 ID（網址 /d/ 後面那串）
  *      LIFF_ID       = LINE 的 LIFF ID（例 1234567890-abcdef）
- *      ALLOW_UIDS    = 允許排班的 LINE userId，逗號分隔；先留空＝全部允許
+ *      ALLOW_UIDS    = 「班頭」的 LINE userId，逗號分隔；空＝測試全開。其他編輯者
+ *                      不用填這裡，用「開通 代碼」由機器人加進 editors 分頁。
+ *      APP_URL       =（選填）完整版 App 網址；不填用預設 github.io 那條。
+ *   分頁：inbox（公版/準據暫存）、codes（代碼↔uid）、editors（編輯者）自動建。
  * C. 部署 → 新增部署作業 → 類型「網頁應用程式」：
  *      執行身分＝我；存取權＝任何人 → 部署，取得 /exec 網址。
  * D. 把 /exec 網址：
@@ -44,6 +50,7 @@ function inbox_(){
 /* ---------- doGet：liff.html 用 ?key= 取原文（回 {text,type}）；沒帶 key 就回存活訊息 ---------- */
 function doGet(e){
   var p = (e && e.parameter) || {};
+  if(p.canedit){ return json_({ edit: allowedEdit_(String(p.canedit)) }); }   // liff 動態問「這個 userId 能不能編輯」
   if(p.key){
     var sh = inbox_(), data = sh.getDataRange().getValues();
     for(var i = data.length - 1; i >= 1; i--){            // 由新到舊找
@@ -66,39 +73,50 @@ function doPost(e){
 }
 
 function handleEvent_(ev){
-  if(!ev || ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
-  var uid  = (ev.source && ev.source.userId) || '';
-  var text = ev.message.text || '';
-  var token = ev.replyToken;
+  if(!ev || ev.type !== 'message') return;
+  var src = ev.source || {}, ctype = src.type || 'user', isGroup = (ctype === 'group' || ctype === 'room');
+  var uid = src.userId || '', token = ev.replyToken, msg = ev.message || {};
 
-  // 查 id 模式（白名單前先放行，讓你能拿到自己的 userId）
-  if(/^\s*whoami\s*$/i.test(text)){ reply_(token, [textMsg_('你的 userId：\n' + uid)]); return; }
+  // 語音訊息 → 彩蛋（群組＋一對一都回）
+  if(msg.type === 'audio'){ reply_(token, [textMsg_('浩ㄏㄠˇ～～～')]); return; }
+  if(msg.type !== 'text') return;
+  var text = (msg.text || '').trim();
 
-  if(!allowed_(uid)){ reply_(token, [textMsg_('你沒有排班權限（userId 不在白名單）。傳「whoami」可查自己的 id。')]); return; }
+  // @提及機器人 → 出來說話 + 指令快捷（主要用在群組）
+  if(isMentioned_(msg)){ reply_(token, [introMsg_()]); return; }
 
-  // 指令說明
-  if(/^\s*(help|指令|說明|？|\?)\s*$/i.test(text)){ reply_(token, [textMsg_(helpText_())]); return; }
+  // ── 身分／管理指令（不分群組或一對一）──
+  if(/^(whoami|代碼|我的(id|userid|代碼|碼)|拿代碼)$/i.test(text)){ reply_(token, [textMsg_(myCode_(uid))]); return; }
+  if(/^開通(\s|$)/.test(text)){ grantCmd_(text, uid, token, isGroup); return; }
+  if(/^(移除|停權)(\s|$)/.test(text)){ revokeCmd_(text, uid, token, isGroup); return; }
+  if(/^(名單|編輯名單|editors)$/i.test(text)){ listEditorsCmd_(uid, token, isGroup); return; }
 
-  // 查詢指令（單行，如「7/21 公版」「分工」）→ 讀雲端 texts 回文字
-  if(tryQuery_(text, token)) return;
+  // ── 說明／App 連結 ──
+  if(/^(help|指令|說明|選單|menu|？|\?)$/i.test(text)){ reply_(token, [introMsg_()]); return; }
+  if(/^(app|完整版|完整app|網址|連結|app網址)$/i.test(text)){ reply_(token, [textMsg_(appUrlText_())]); return; }
 
-  // 分類：行動準據 or 公版
+  // ── 查詢（看結果，全群開放）──
+  var q = parseQuery_(text);
+  if(q){ answerQuery_(q, token); return; }
+
+  // ── 貼原文（公版／行動準據）→ 需要編輯權限 ──
   var kind = classifyText_(text);
   if(kind === 'unknown'){
-    reply_(token, [textMsg_('看不懂這則訊息。\n· 轉傳「空白公版」→ 我給你排班按鈕\n· 轉傳「行動準據」→ 我給你上傳按鈕\n· 傳「7/21 公版」或「7/21 分工」→ 查已排好的\n· 傳「指令」看說明')]); return;
+    if(isGroup) return;                        // 群組閒聊 → 安靜，不回「看不懂」
+    reply_(token, [introMsg_()]);              // 一對一 → 給選單引導
+    return;
   }
-
+  if(!allowedEdit_(uid)){
+    if(isGroup) return;                        // 群組裡非編輯者貼原文 → 安靜（避免洗版）
+    reply_(token, [textMsg_('你不是排班負責人。看結果可以打「公版」「分工」「行程」；想排班就打「代碼」拿代碼給班頭開通。')]);
+    return;
+  }
   var md = extractDate_(text);
   var key = Utilities.getUuid();
   inbox_().appendRow([key, text, new Date().getTime(), uid, kind]);   // 第 5 欄存 type
   trimInbox_(300);
-
   var baseUrl = 'https://liff.line.me/' + prop_('LIFF_ID') + '?key=' + encodeURIComponent(key);
-  if(kind === 'guide'){
-    reply_(token, [flexGuide_(baseUrl + '&type=guide', md)]);
-  }else{
-    reply_(token, [flexGongban_(baseUrl, text, md)]);
-  }
+  reply_(token, [ kind === 'guide' ? flexGuide_(baseUrl + '&type=guide', md) : flexGongban_(baseUrl, text, md) ]);
 }
 
 /* ---------- 分類：公版 vs 行動準據 ---------- */
@@ -127,22 +145,67 @@ function shiftMD_(n){ var d = new Date(); d.setDate(d.getDate() + n); return Uti
 function todayMD_(){ return shiftMD_(0); }
 function relDay_(md){ if(!md) return ''; if(md === todayMD_()) return '今天'; if(md === shiftMD_(1)) return '明天'; if(md === shiftMD_(-1)) return '昨天'; return md; }
 
-/* ---------- 查詢指令：讀雲端 texts 回文字 ---------- */
-function helpText_(){
-  return '📋 261 排勤務板 bot 指令：\n\n· 轉傳空白公版 → 給你排班按鈕\n· 轉傳行動準據 → 給你上傳按鈕\n· 「7/21 公版」→ 回那天填好的公版\n· 「7/21 分工」→ 回那天的個人分工\n· 只打「公版」「分工」→ 預設今天\n· 「whoami」→ 查你的 userId';
-}
-function tryQuery_(text, token){
-  if(/[\r\n]/.test(text)) return false;                     // 多行＝貼上的原文，不是查詢
-  if(!/公版|分工|個人分工|排班表/.test(text)) return false;
+/* ---------- 查詢（看結果）：公版/分工回文字、行程回 carousel 三頁 ---------- */
+function parseQuery_(text){
+  if(/[\r\n]/.test(text)) return null;                      // 多行＝貼上的原文，不是查詢
   var md = extractDate_(text) || todayMD_();
-  var wantPersons = /分工/.test(text);
-  var data = syncData_(), texts = (data && data.texts) || {};
-  var rec = texts[md];
-  if(!rec){ reply_(token, [textMsg_('還沒有 ' + md + ' 的資料。\n先在排班頁排好、按「發送」就會存起來，之後就查得到了。')]); return true; }
-  var out = wantPersons ? (rec.persons || '') : (rec.filled || '');
-  if(!out){ reply_(token, [textMsg_(md + ' 目前沒有' + (wantPersons ? '個人分工' : '填好的公版') + '。')]); return true; }
+  if(/分工|個人分工/.test(text))      return { kind: 'persons',  md: md };
+  if(/公版|填好/.test(text))          return { kind: 'gongban',  md: md };
+  if(/行程|流程|時段|八人/.test(text)) return { kind: 'schedule', md: md };
+  return null;
+}
+function answerQuery_(q, token){
+  var data = syncData_();
+  if(q.kind === 'schedule'){
+    var has = (data.texts && data.texts[q.md]) || (data.boards && data.boards[q.md]) || (data.plans && data.plans[q.md]);
+    if(!has){ reply_(token, [textMsg_('還沒有 ' + q.md + ' 的行程。先在 App 排好、按發送就會有了。')]); return; }
+    reply_(token, [carouselSchedule_(q.md)]); return;
+  }
+  var rec = (data.texts || {})[q.md];
+  if(!rec){ reply_(token, [textMsg_('還沒有 ' + q.md + ' 的資料。先在排班頁排好、按「發送」就會存起來，之後就查得到了。')]); return; }
+  var out = q.kind === 'persons' ? (rec.persons || '') : (rec.filled || '');
+  if(!out){ reply_(token, [textMsg_(q.md + ' 目前沒有' + (q.kind === 'persons' ? '個人分工' : '填好的公版') + '。')]); return; }
   reply_(token, [textMsg_(out)]);
-  return true;
+}
+/* 行程 carousel：三頁 kilo bubble，各自開 LIFF 唯讀檢視（八人時段表/當天流程/八人分工） */
+function carouselSchedule_(md){
+  var base = 'https://liff.line.me/' + prop_('LIFF_ID') + '?type=view&date=' + encodeURIComponent(md);
+  var views = [
+    ['C', '八人時段表', '每個人幾點做什麼，一眼看完'],
+    ['A', '當天流程',   '時間軸：起床→升旗→用餐…'],
+    ['B', '八人分工',   '每個人今天被派到的勤務']
+  ];
+  var bubbles = views.map(function(v){ return viewBubble_(md, v[1], v[2], base + '&view=' + v[0]); });
+  return { type: 'flex', altText: md + ' 行程', contents: { type: 'carousel', contents: bubbles } };
+}
+function viewBubble_(md, title, sub, url){
+  return {
+    type: 'bubble', size: 'kilo',
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+      { type: 'text', text: dateTag_(md), size: 'xs', color: '#6C7268' },
+      { type: 'text', text: title, weight: 'bold', size: 'xl', color: '#2A4634' },
+      { type: 'text', text: sub, size: 'sm', color: '#6C7268', wrap: true }
+    ]},
+    footer: { type: 'box', layout: 'vertical', contents: [
+      { type: 'button', style: 'primary', color: '#2A4634', height: 'sm', action: { type: 'uri', label: '打開看', uri: url } }
+    ]}
+  };
+}
+/* 選單（@提及／help／一對一看不懂時）：介紹 + quick reply 指令快捷 */
+function introMsg_(){
+  return {
+    type: 'text',
+    text: '嗨，我是排勤務小幫手 🍔\n看結果打「公版」「分工」「行程」（可加日期，例：7/21 公版）。要完整版打「app」。',
+    quickReply: { items: [
+      qr_('今日公版', '公版'), qr_('今日分工', '分工'), qr_('今日行程', '行程'),
+      qr_('完整App', 'app'), qr_('拿代碼', '代碼'), qr_('指令說明', '指令')
+    ]}
+  };
+}
+function qr_(label, text){ return { type: 'action', action: { type: 'message', label: label, text: text } }; }
+function appUrlText_(){
+  var u = prop_('APP_URL') || 'https://b09901017.github.io/Army-duty-assign/';
+  return '📱 完整版 App（行程／統計／站哨全都有，預設唯讀、看不會改壞）：\n' + u;
 }
 /* 讀 sync 試算表 data 分頁的分片 JSON（跟 sync_AppsScript.gs 的 read_ 一樣：A1..A30 串接） */
 function syncData_(){
@@ -154,12 +217,75 @@ function syncData_(){
   }catch(e){ return {}; }
 }
 
-/* ---------- 白名單 ---------- */
-function allowed_(uid){
+/* ---------- 權限：看結果全開；排班/上傳＝owner(ALLOW_UIDS) ＋ editors 分頁 ---------- */
+function isOwner_(uid){
   var raw = prop_('ALLOW_UIDS');
-  if(!raw || !raw.replace(/\s/g,'')) return true;          // 沒設＝全部允許（測試用）
-  var list = raw.split(',').map(function(s){ return s.trim(); });
-  return list.indexOf(uid) >= 0;
+  if(!raw || !raw.replace(/\s/g,'')) return false;
+  return raw.split(',').map(function(s){ return s.trim(); }).indexOf(uid) >= 0;
+}
+function allowedEdit_(uid){
+  var raw = prop_('ALLOW_UIDS');
+  if(!raw || !raw.replace(/\s/g,'')) return true;          // 還沒設 owner＝測試模式全開
+  if(!uid) return false;
+  return isOwner_(uid) || isEditorSheet_(uid);
+}
+
+/* ---------- 友善代碼（codes 分頁：code↔uid）＋ 編輯者名單（editors 分頁） ---------- */
+function codes_(){ var ss = ss_(), sh = ss.getSheetByName('codes'); if(!sh){ sh = ss.insertSheet('codes'); sh.appendRow(['code','uid','ts']); } return sh; }
+function editors_(){ var ss = ss_(), sh = ss.getSheetByName('editors'); if(!sh){ sh = ss.insertSheet('editors'); sh.appendRow(['uid','ts','code']); } return sh; }
+function isEditorSheet_(uid){ var d = editors_().getDataRange().getValues(); for(var i = 1; i < d.length; i++){ if(String(d[i][0]) === uid) return true; } return false; }
+function getOrMakeCode_(uid){
+  var sh = codes_(), d = sh.getDataRange().getValues();
+  for(var i = 1; i < d.length; i++){ if(String(d[i][1]) === uid) return String(d[i][0]); }
+  var code = 'K-' + Utilities.getUuid().replace(/[^0-9A-Za-z]/g, '').slice(0, 4).toUpperCase();
+  sh.appendRow([code, uid, new Date().getTime()]);
+  return code;
+}
+function uidOfCode_(code){
+  code = String(code || '').toUpperCase();
+  var sh = codes_(), d = sh.getDataRange().getValues();
+  for(var i = 1; i < d.length; i++){ if(String(d[i][0]).toUpperCase() === code) return String(d[i][1]); }
+  return '';
+}
+function myCode_(uid){
+  if(!uid) return '抓不到你的 LINE 身分（要用文字訊息，且我要在這個聊天室裡）。';
+  var code = getOrMakeCode_(uid);
+  var mine = allowedEdit_(uid) ? '\n（你已經有排班權限了）' : '';
+  return '你的代碼：' + code + '\n把這串貼給班頭，他打「開通 ' + code + '」就能幫你開排班權限（不會看到你的個資）。' + mine;
+}
+function grantCmd_(text, uid, token, isGroup){
+  if(!isOwner_(uid)){ if(!isGroup) reply_(token, [textMsg_('只有班頭能開通別人。')]); return; }
+  var code = text.replace(/^開通\s*/, '').trim().toUpperCase();
+  if(!code){ reply_(token, [textMsg_('用法：開通 K-XXXX（請對方先打「代碼」拿到）')]); return; }
+  var tuid = uidOfCode_(code);
+  if(!tuid){ reply_(token, [textMsg_('找不到代碼 ' + code + '。請對方重打「代碼」拿新的貼給你。')]); return; }
+  if(isEditorSheet_(tuid) || isOwner_(tuid)){ reply_(token, [textMsg_(code + ' 已經有排班權限了。')]); return; }
+  editors_().appendRow([tuid, new Date().getTime(), code]);
+  reply_(token, [textMsg_('✅ 已開通 ' + code + ' 的排班權限。')]);
+}
+function revokeCmd_(text, uid, token, isGroup){
+  if(!isOwner_(uid)){ if(!isGroup) reply_(token, [textMsg_('只有班頭能移除。')]); return; }
+  var code = text.replace(/^(移除|停權)\s*/, '').trim().toUpperCase();
+  var tuid = uidOfCode_(code);
+  if(!tuid){ reply_(token, [textMsg_('找不到代碼 ' + code + '。')]); return; }
+  var sh = editors_(), d = sh.getDataRange().getValues(), removed = false;
+  for(var i = d.length - 1; i >= 1; i--){ if(String(d[i][0]) === tuid){ sh.deleteRow(i + 1); removed = true; } }
+  reply_(token, [textMsg_(removed ? ('已移除 ' + code + ' 的排班權限。') : (code + ' 本來就不是編輯者。'))]);
+}
+function listEditorsCmd_(uid, token, isGroup){
+  if(!isOwner_(uid)){ if(!isGroup) reply_(token, [textMsg_('只有班頭能看名單。')]); return; }
+  var d = editors_().getDataRange().getValues(), codes = [];
+  for(var i = 1; i < d.length; i++){ codes.push(String(d[i][2] || '?')); }
+  reply_(token, [textMsg_('額外編輯者：' + (codes.length ? codes.join('、') : '（無）') + '\n（你本人一直都是編輯者）')]);
+}
+
+/* ---------- @提及機器人偵測（新版 LINE API mentionees[].isSelf） ---------- */
+function isMentioned_(msg){
+  try{
+    var m = msg.mention; if(!m || !m.mentionees) return false;
+    for(var i = 0; i < m.mentionees.length; i++){ if(m.mentionees[i].isSelf === true) return true; }
+  }catch(e){}
+  return false;
 }
 
 /* ---------- inbox 清理 ---------- */
