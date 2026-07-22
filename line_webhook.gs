@@ -234,7 +234,7 @@ function previewBubble_(md, title, rows, url, accent){
   if(rows.length) rows.forEach(function(r){ body.push(r); });
   else body.push({ type: 'text', text: '（這天沒有內容）', size: 'sm', color: '#6C7268', margin: 'md' });
   return {
-    type: 'bubble', size: 'kilo',
+    type: 'bubble', size: 'mega',
     body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: body },
     footer: { type: 'box', layout: 'vertical', contents: [
       { type: 'button', style: 'primary', color: accent, height: 'sm', action: { type: 'uri', label: '看完整', uri: url } }
@@ -260,7 +260,7 @@ function guideText_(data, md){
 /* 純文字整段卡（完整勤務／完整準據）：一整塊 wrap 文字，和班長給的一樣、不上色 */
 function textBubble_(md, title, bodyText, accent){
   return {
-    type: 'bubble', size: 'giga',
+    type: 'bubble', size: 'mega',
     body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
       { type: 'text', text: dateTag_(md), size: 'xs', color: '#6C7268' },
       { type: 'text', text: title, weight: 'bold', size: 'lg', color: accent },
@@ -272,7 +272,7 @@ function textBubble_(md, title, bodyText, accent){
 /* 圖片卡（八人時段表）：固定圖片當 hero ＋「看完整」開 LIFF view=C */
 function imageBubble_(md, title, imgUrl, url, accent){
   return {
-    type: 'bubble', size: 'kilo',
+    type: 'bubble', size: 'mega',
     hero: { type: 'image', url: imgUrl, size: 'full', aspectRatio: '543:1280', aspectMode: 'cover', action: { type: 'uri', uri: url } },
     body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
       { type: 'text', text: dateTag_(md), size: 'xs', color: '#6C7268' },

@@ -267,8 +267,9 @@ git checkout <工作分支>
 - ⚠️ 改了 `.gs`，**使用者要重新部署那份 webhook Apps Script**（管理部署→編輯→新版本→部署，網址不變）才生效。
 ### (7) 行程 carousel 改 5 張＋固定圖片（webhook）
 - **順序改成 5 張**：①完整勤務 ②行動準據 ③八人時段表(圖) ④當天流程 ⑤八人分工。使用者要「勤務／準據並排左右滑，不用上下滑長訊息」。
-- **① 完整勤務**＝`textBubble_`（giga 純文字卡）直接秀 `texts[md].filled`（填好名字的公版，和班長給的一模一樣、不上色）。沒資料→提示先排班。
+- **① 完整勤務**＝`textBubble_`（純文字卡）直接秀 `texts[md].filled`（填好名字的公版，和班長給的一模一樣、不上色）。沒資料→提示先排班。
 - **② 行動準據**＝`textBubble_` 秀 `guideText_(data,md)`：讀 `plans[md].schedule`(fallback `boards[md].schedule.items`) **完整重建**時間軸文字（`fmtRange_` 保留 `0600-0630` 起訖、含無時間的行）。雲端沒存準據 raw，用 items 還原；夠忠實。沒資料→提示先上傳準據。
+- **⚠️ carousel bubble 尺寸鐵則（踩過坑）**：LINE 規定 **carousel 裡不能有 `giga`，且所有 bubble 必須同一尺寸**，違反→整則 Flex 被打回 400、`reply_` 因 `muteHttpExceptions` 靜默吞掉→使用者端「打行程毫無反應」。第一版把①②做成 `giga`、③④⑤是 `kilo`（混尺寸＋含 giga）就中這坑。**5 張一律 `mega`**（carousel 允許的最大、放得下完整文字）。改卡片時務必維持同尺寸、別用 giga。
 - **③ 八人時段表**＝`imageBubble_`：hero 放**固定圖片**（`data/schedule8.jpg`，543×1280，`aspectRatio:'543:1280' aspectMode:'cover'`）＋「看完整」開 LIFF `view=C`。**不是截圖**，就一張放進 repo、GitHub Pages 服務的公開圖 → 繞過 §7.6 圖床難題。圖網址可用 Script Property **`SCHED_IMG_URL`** 覆蓋（換圖即時生效不用重部署）；設 `none`/`off` 退回文字預覽卡。
 - **④當天流程 / ⑤八人分工**＝維持原 `previewBubble_`（view=A / view=B），內容不變。
 - stub 測 16 項全過（5 張/各標題/準據重建含起訖與無時間行/圖片 hero＋預設網址＋比例＋view=C/當天流程 view=A/分工 view=B/Flex 總大小 5.4KB<50KB）。
