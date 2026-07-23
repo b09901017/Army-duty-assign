@@ -53,7 +53,23 @@ var ROSTER = [
 ];
 function ownerName_(){ return prop_('OWNER_NAME') || '旭辰'; }
 
-function ss_(){ return SpreadsheetApp.openById(prop_('SHEET_ID')); }
+var _SS = null;
+function ss_(){ if(!_SS){ _SS = SpreadsheetApp.openById(prop_('SHEET_ID')); } return _SS; }   // 同一次執行只 openById 一次
+
+/* ---------- 共用小工具：長文字截斷、清理無限長大分頁、錯誤紀錄 ---------- */
+function clip_(s, max, note){                                  // 超過 max 字就截斷（避免整則 Flex/文字被 LINE 打回）
+  s = String(s == null ? '' : s);
+  if(s.length <= max) return s;
+  return s.slice(0, Math.max(0, max - 1)) + '…' + (note ? ('\n' + note) : '');
+}
+function trimSheet_(sh, keep){                                 // 只留最近 keep 列（含表頭），刪最舊的
+  try{ var extra = sh.getLastRow() - 1 - keep; if(extra > 0) sh.deleteRows(2, extra); }catch(e){}
+}
+function logSheet_(){ var ss = ss_(), sh = ss.getSheetByName('_log'); if(!sh){ sh = ss.insertSheet('_log'); sh.appendRow(['ts','where','detail']); } return sh; }
+function logErr_(where, detail){                               // 把靜默失敗（handler 例外 / reply 非 2xx）記到 _log 分頁，方便除錯
+  try{ var sh = logSheet_(); sh.appendRow([new Date(), String(where), String(detail).slice(0, 500)]); trimSheet_(sh, 200); }catch(e){}
+}
+
 function inbox_(){
   var ss = ss_(), sh = ss.getSheetByName('inbox');
   if(!sh){ sh = ss.insertSheet('inbox'); sh.appendRow(['key','text','ts','uid']); }
@@ -62,6 +78,7 @@ function inbox_(){
 
 /* ---------- doGet：liff.html 用 ?key= 取原文（回 {text,type}）；沒帶 key 就回存活訊息 ---------- */
 function doGet(e){
+  _SYNC = null;                                          // 每次請求重置 syncData_ 快取（避免跨請求拿到舊資料）
   var p = (e && e.parameter) || {};
   if(p.canedit){ return json_({ edit: allowedEdit_(String(p.canedit)) }); }   // liff 動態問「這個 userId 能不能編輯」
   if(p.key){
@@ -76,11 +93,12 @@ function doGet(e){
 
 /* ---------- doPost：LINE webhook 進來這裡 ---------- */
 function doPost(e){
+  _SYNC = null;                                            // 每次請求重置 syncData_ 快取
   var body = {};
   try{ body = JSON.parse(e.postData.contents); }catch(err){ return json_({ ok:false }); }
   var events = body.events || [];
   for(var i = 0; i < events.length; i++){
-    try{ handleEvent_(events[i]); }catch(err){ /* 單則失敗不影響其它 */ }
+    try{ handleEvent_(events[i]); }catch(err){ logErr_('handleEvent', (err && err.stack) || err); }   // 單則失敗不影響其它，但記下來別再靜默
   }
   return json_({ ok: true });                              // LINE 只在意 HTTP 200
 }
@@ -99,8 +117,12 @@ function handleEvent_(ev){
   // 被動認人：群組裡有人講話就記下 uid↔顯示名（給「關燈」@人用；已記過就跳過不再打 API）
   if(ctype === 'group' && gid && uid) learnMember_(gid, uid);
 
-  // @提及機器人 → 出來說話 + 指令快捷（主要用在群組）
-  if(isMentioned_(msg)){ reply_(token, [introMsg_()]); return; }
+  // @提及機器人：剝掉 @bot 那段後，若還有內容就照常跑指令/查詢（例：@bot 7/21 公版）；純 @ 才回選單
+  if(isMentioned_(msg)){
+    var stripped = stripSelfMention_(msg);
+    if(!stripped){ reply_(token, [introMsg_()]); return; }
+    text = stripped;
+  }
 
   // 關燈 → 隨機抽一個班上的人 @他去關燈
   if(/^(關燈|關電燈|關個燈|誰去?關燈)$/.test(text)){ lightsOut_(gid, ctype, token); return; }
@@ -187,7 +209,7 @@ function answerQuery_(q, token){
   if(!rec){ reply_(token, [textMsg_('還沒有 ' + q.md + ' 的資料。先在排班頁排好、按「發送」就會存起來，之後就查得到了。')]); return; }
   var out = q.kind === 'persons' ? (rec.persons || '') : (rec.filled || '');
   if(!out){ reply_(token, [textMsg_(q.md + ' 目前沒有' + (q.kind === 'persons' ? '個人分工' : '填好的公版') + '。')]); return; }
-  reply_(token, [textMsg_(out)]);
+  reply_(token, [textMsg_(clip_(out, 4500, '（太長已截斷，完整請開 app 或打「行程」）'))]);   // 純文字訊息上限 ~5000，超過整則會被打回
 }
 /* ---------- 行程 carousel：三頁 kilo bubble，各自「預覽內容」＋按鈕開 LIFF 唯讀完整檢視 ---------- */
 function nm_(names, id){ return (names && names[id]) ? names[id] : ('0' + id).slice(-2); }
@@ -321,10 +343,11 @@ function carouselSchedule_(md, data){
 
   // 4 張：①完整勤務→視覺化(八人時段表 view=C) ②行動準據→視覺化(當天流程 view=A)
   //       ③個人分工→視覺化(八人分工 view=B) ④八人時段表(圖)→看完整(view=C)
+  var NOTE = '（太長，點下面「視覺化呈現」看完整）';   // Flex 單一 text 有字數上限、整則 50KB，超過會被 LINE 打回→靜默無回應
   var bubbles = [
-    textBubbleBtn_(md, '完整勤務', filled,  '視覺化呈現', base + '&view=C', '#2A4634'),
-    textBubbleBtn_(md, '行動準據', guide,   '視覺化呈現', base + '&view=A', '#A9793F'),
-    textBubbleBtn_(md, '個人分工', persons, '視覺化呈現', base + '&view=B', '#5479A6'),
+    textBubbleBtn_(md, '完整勤務', clip_(filled,  1000, NOTE), '視覺化呈現', base + '&view=C', '#2A4634'),
+    textBubbleBtn_(md, '行動準據', clip_(guide,   1000, NOTE), '視覺化呈現', base + '&view=A', '#A9793F'),
+    textBubbleBtn_(md, '個人分工', clip_(persons, 1000, NOTE), '視覺化呈現', base + '&view=B', '#5479A6'),
     card4
   ];
   return { type: 'flex', altText: md + ' 行程', contents: { type: 'carousel', contents: bubbles } };
@@ -346,13 +369,15 @@ function appUrlText_(){
   return '📱 完整版 App（行程／統計／站哨全都有，預設唯讀、看不會改壞）：\n' + u;
 }
 /* 讀 sync 試算表 data 分頁的分片 JSON（跟 sync_AppsScript.gs 的 read_ 一樣：A1..A30 串接） */
+var _SYNC = null;   // 同一次請求只讀/parse data 分頁一次（doGet/doPost 進來會重置）
 function syncData_(){
+  if(_SYNC) return _SYNC;
   try{
-    var sh = ss_().getSheetByName('data'); if(!sh) return {};
+    var sh = ss_().getSheetByName('data'); if(!sh){ _SYNC = {}; return _SYNC; }
     var vals = sh.getRange(1, 1, 30, 1).getValues(), s = '';
     for(var i = 0; i < vals.length; i++){ var v = vals[i][0]; if(v === '' || v == null) break; s += String(v); }
-    return JSON.parse(s || '{}');
-  }catch(e){ return {}; }
+    _SYNC = JSON.parse(s || '{}'); return _SYNC;
+  }catch(e){ _SYNC = {}; return _SYNC; }
 }
 
 /* ---------- 權限：看結果全開；排班/上傳＝owner(ALLOW_UIDS) ＋ editors 分頁 ---------- */
@@ -377,6 +402,7 @@ function getOrMakeCode_(uid){
   for(var i = 1; i < d.length; i++){ if(String(d[i][1]) === uid) return String(d[i][0]); }
   var code = 'K-' + Utilities.getUuid().replace(/[^0-9A-Za-z]/g, '').slice(0, 4).toUpperCase();
   sh.appendRow([code, uid, new Date().getTime()]);
+  trimSheet_(sh, 500);   // codes 只增不減 → 設上限（editors 是權限白名單，不能按數量刪）
   return code;
 }
 function uidOfCode_(code){
@@ -425,6 +451,23 @@ function isMentioned_(msg){
   }catch(e){}
   return false;
 }
+/* 從訊息文字剝掉「@本機器人」那段（用 mentionees 的 index/length，由後往前刪），回傳剩下的指令文字 */
+function stripSelfMention_(msg){
+  var t = String((msg && msg.text) || '');
+  try{
+    var m = msg && msg.mention;
+    if(m && m.mentionees && m.mentionees.length){
+      var rs = [];
+      for(var i = 0; i < m.mentionees.length; i++){
+        var e = m.mentionees[i];
+        if(e && e.isSelf === true && typeof e.index === 'number' && typeof e.length === 'number') rs.push(e);
+      }
+      rs.sort(function(a, b){ return b.index - a.index; });   // 由後往前刪，index 才不會位移
+      for(var j = 0; j < rs.length; j++){ t = t.slice(0, rs[j].index) + t.slice(rs[j].index + rs[j].length); }
+    }
+  }catch(e){}
+  return t.trim();
+}
 
 /* ---------- 關燈：被動認人 + 隨機抽班上的人 @他 ---------- */
 function members_(){ var ss = ss_(), sh = ss.getSheetByName('members'); if(!sh){ sh = ss.insertSheet('members'); sh.appendRow(['gid','uid','name','ts']); } return sh; }
@@ -449,6 +492,7 @@ function learnMember_(gid, uid){
   var dn = groupMemberName_(gid, uid);
   if(!dn) return;
   sh.appendRow([gid, uid, dn, new Date().getTime()]);
+  trimSheet_(sh, 500);   // members 只增不減 → 設上限
 }
 function lightsOut_(gid, ctype, token){
   var picks = [];
@@ -475,13 +519,17 @@ function trimInbox_(keep){
 /* ---------- LINE reply API ---------- */
 function reply_(token, messages){
   if(!token) return;
-  UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { Authorization: 'Bearer ' + prop_('CHANNEL_TOKEN') },
-    payload: JSON.stringify({ replyToken: token, messages: messages }),
-    muteHttpExceptions: true
-  });
+  try{
+    var r = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + prop_('CHANNEL_TOKEN') },
+      payload: JSON.stringify({ replyToken: token, messages: messages }),
+      muteHttpExceptions: true
+    });
+    var code = r.getResponseCode();
+    if(code < 200 || code >= 300) logErr_('reply ' + code, r.getContentText());   // 被 LINE 打回（如 Flex 太大 400）不再靜默
+  }catch(e){ logErr_('reply', e); }
 }
 function textMsg_(t){ return { type: 'text', text: t }; }
 function dateTag_(md){ var r = relDay_(md); return md ? (r === md ? md : (r + '　' + md)) : ''; }
