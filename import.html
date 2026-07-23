@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>261 原文批次匯入（只補文字，不動排班）</title>
+<style>
+  :root{--bg:#F1F3EE;--surface:#fff;--ink:#20261E;--sub:#6C7268;--line:#E3E5DC;--green:#3B6147;--green-deep:#2A4634;--brass:#A9793F;--red:#B0453C;--red-soft:#F6E5E2;--green-soft:#E9EFE8;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Noto Sans TC","PingFang TC",sans-serif;}
+  .wrap{max-width:760px;margin:0 auto;padding:18px 14px 120px;}
+  h1{font-size:19px;margin:0 0 4px;}
+  .muted{color:var(--sub);font-size:13px;line-height:1.7;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:12px;}
+  label{font-size:12px;font-weight:800;color:var(--sub);letter-spacing:.5px;display:block;margin-bottom:6px;}
+  input[type=text],textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:14px;outline:none;font-family:inherit;}
+  textarea{min-height:96px;line-height:1.6;resize:vertical;font-family:ui-monospace,Menlo,monospace;font-size:13px;}
+  button{font:inherit;cursor:pointer;border:none;border-radius:11px;padding:11px 16px;font-weight:800;font-size:14px;}
+  .primary{background:var(--green-deep);color:#fff;}
+  .brass{background:var(--brass);color:#fff;}
+  .ghost{background:var(--surface);color:var(--sub);border:1px solid var(--line);}
+  .danger{background:var(--red);color:#fff;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .day{border:1px dashed var(--line);border-radius:12px;padding:12px;margin-top:10px;position:relative;}
+  .day .dcols{display:grid;grid-template-columns:1fr;gap:10px;}
+  .pill{display:inline-block;font-size:12px;font-weight:800;padding:3px 9px;border-radius:999px;background:var(--green-soft);color:var(--green-deep);}
+  .warn{background:var(--red-soft);color:var(--red);border:1px solid var(--red);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700;line-height:1.6;}
+  .ok{background:var(--green-soft);color:var(--green-deep);border:1px solid var(--green);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700;line-height:1.6;}
+  a.dl{font-size:13px;font-weight:800;color:var(--brass);}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0 0;max-height:220px;overflow:auto;}
+  .hide{display:none;}
+  hr{border:none;border-top:1px solid var(--line);margin:14px 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>261 原文批次匯入</h1>
+  <div class="muted">只把「勤務填好公版」寫進 <b>texts.filled</b>、「行動準據原文」寫進 <b>boards[日期].schedule.raw</b>，供 LINE bot 行程卡完整呈現。<br><b>不會</b>解析、<b>不會</b>重排、<b>不會</b>動到任何人的分工／統計／站哨——寫入前有嚴格檢查，一有異動就中止。</div>
+
+  <div class="card">
+    <label>雲端同步網址（Apps Script /exec，跟 App 同一份）</label>
+    <input type="text" id="url" value="https://script.google.com/macros/s/AKfycbwDGPUZUg4JTEDHzbcqkSTsIEcbxVMgtrJofsvJu1cOzp3u377k188T7a04HJCRCfRW/exec" />
+    <div class="row" style="margin-top:10px;">
+      <button class="primary" id="btnFetch">① 讀取雲端目前資料</button>
+      <a class="dl hide" id="backup" download="cloud-backup.json">⬇ 下載目前雲端備份（先存起來）</a>
+    </div>
+    <div id="status" class="muted" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card">
+    <label>② 要補的原文（一天一塊，欄位留白就不動那格）</label>
+    <div class="muted" style="margin-bottom:6px;">日期用 M/D（例 7/21）。勤務＝填好名字的完整公版；準據＝班長給的行動準據原文。</div>
+    <div id="days"></div>
+    <div class="row" style="margin-top:10px;"><button class="ghost" id="btnAddDay">＋ 新增一天</button></div>
+  </div>
+
+  <div class="row" style="margin-top:14px;">
+    <button class="primary" id="btnPreview">③ 預覽將寫入（含安全檢查）</button>
+  </div>
+  <div id="preview"></div>
+
+  <div class="card hide" id="confirmWrap">
+    <div class="warn">確認要寫入雲端。系統會<b>再抓一次最新資料</b>疊加，並在寫入前逐項檢查「分工／統計／站哨完全沒被動到」。</div>
+    <label style="margin-top:12px;">請在下面輸入「<b>上傳</b>」兩個字再按寫入</label>
+    <input type="text" id="confirmText" placeholder="上傳" />
+    <div class="row" style="margin-top:10px;"><button class="danger" id="btnWrite">④ 寫入雲端</button></div>
+    <div id="writeStatus" class="muted" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<!-- 純邏輯（無 DOM），可被 node 測試單獨載入 -->
+<script>
+"use strict";
+function normMD(s){var m=String(s||"").match(/(\d{1,2})\s*\/\s*(\d{1,2})/);return m?(parseInt(m[1],10)+"/"+parseInt(m[2],10)):"";}
+function clone(o){return JSON.parse(JSON.stringify(o));}
+// 只疊加 texts.filled/persons 與 boards[md].schedule.raw；回傳被動到的日期集合
+function mergeInto(cloud, days, now){
+  now=now||Date.now();
+  cloud.texts=cloud.texts||{};
+  cloud.boards=cloud.boards||{};
+  var touched={t:{},b:{}};
+  days.forEach(function(d){
+    var md=normMD(d.date);if(!md)return;
+    if(d.filled||d.persons){
+      var t=cloud.texts[md]?clone(cloud.texts[md]):{filled:"",persons:""};
+      if(d.filled)t.filled=d.filled;
+      if(d.persons)t.persons=d.persons;
+      if(typeof t.filled!=="string")t.filled="";
+      if(typeof t.persons!=="string")t.persons="";
+      t.ts=now;cloud.texts[md]=t;touched.t[md]=1;
+    }
+    if(d.raw){
+      if(cloud.boards[md]){
+        var b=cloud.boards[md];
+        b.schedule=b.schedule||{items:[],title:"",date:"",loaded:false,raw:""};
+        b.schedule.raw=d.raw;b.ts=now;
+      }else{
+        cloud.boards[md]={meta:[],duties:[],wd:"",committed:false,imported:false,ts:now,
+          schedule:{items:[],title:"",date:"",loaded:false,raw:d.raw}};
+      }
+      touched.b[md]=1;
+    }
+  });
+  return touched;
+}
+// 嚴格驗證：除了 texts 與「被指定的板子的 schedule.raw/ts」以外，其它一律不准變
+function verify(before, after, touched){
+  var keys=["names","log","mealQueue","guard","guardWeeks","guardTally","plans","absence","tomb","tombIds","wipe","stateTs"];
+  for(var i=0;i<keys.length;i++){var k=keys[i];
+    if(JSON.stringify(after[k])!==JSON.stringify(before[k]))return "欄位「"+k+"」被更動，已中止（不應發生）";
+  }
+  var d;
+  for(d in (before.boards||{})){
+    if(!after.boards||!after.boards[d])return "排班板 "+d+" 消失了，已中止";
+    var bb=before.boards[d],ab=after.boards[d];
+    if(JSON.stringify(ab.duties)!==JSON.stringify(bb.duties))return "排班板 "+d+" 的分工被改到，已中止";
+    if(!!ab.committed!==!!bb.committed)return "排班板 "+d+" 的計入狀態被改到，已中止";
+    if(!(touched.b&&touched.b[d])&&JSON.stringify(ab)!==JSON.stringify(bb))return "未指定的排班板 "+d+" 被改到，已中止";
+  }
+  for(d in (before.texts||{})){
+    if(!(touched.t&&touched.t[d])&&JSON.stringify(after.texts[d])!==JSON.stringify(before.texts[d]))return "未指定的 texts "+d+" 被改到，已中止";
+  }
+  return "";
+}
+if(typeof module!=="undefined")module.exports={normMD:normMD,clone:clone,mergeInto:mergeInto,verify:verify};
+</script>
+
+<!-- UI -->
+<script>
+"use strict";
+var $=function(id){return document.getElementById(id);};
+var cloudBefore=null, plannedDays=null;
+function setStatus(el,msg,cls){el.innerHTML='<span class="'+(cls||"")+'">'+msg+'</span>';}
+
+function addDay(pre){
+  var wrap=document.createElement("div");wrap.className="day";
+  wrap.innerHTML='<div class="row" style="justify-content:space-between;"><input class="d-date" type="text" placeholder="日期 M/D，例 7/21" style="max-width:200px;" value="'+(pre||"")+'" /><button class="ghost d-del" style="padding:6px 12px;font-size:12px;">刪這天</button></div>'
+    +'<div class="dcols" style="margin-top:10px;"><div><label>勤務（填好名字的完整公版）→ texts.filled</label><textarea class="d-filled" placeholder="貼上那天填好我們名字的整份公版…"></textarea></div>'
+    +'<div><label>行動準據原文 → schedule.raw</label><textarea class="d-raw" placeholder="貼上班長給的行動準據原文…"></textarea></div></div>';
+  wrap.querySelector(".d-del").onclick=function(){wrap.remove();};
+  $("days").appendChild(wrap);
+}
+function readDays(){
+  var out=[];
+  document.querySelectorAll("#days .day").forEach(function(w){
+    var date=w.querySelector(".d-date").value.trim();
+    var filled=w.querySelector(".d-filled").value;
+    var raw=w.querySelector(".d-raw").value;
+    if(!date)return;
+    out.push({date:date, filled:filled.trim()?filled:"", raw:raw.trim()?raw:""});
+  });
+  return out;
+}
+
+function fetchCloud(){
+  var url=$("url").value.trim();
+  if(!url){setStatus($("status"),"先填同步網址","warn");return Promise.reject();}
+  setStatus($("status"),"讀取中…","");
+  return fetch(url).then(function(r){return r.text();}).then(function(txt){
+    var o=null;try{o=JSON.parse(txt);}catch(e){}
+    if(!o||!o.names){setStatus($("status"),"讀到的資料不對（沒有 names），為安全起見不繼續。請確認網址。","warn");cloudBefore=null;return;}
+    cloudBefore=o;
+    var nb=Object.keys(o.boards||{}).length, nt=Object.keys(o.texts||{}).length, nlog=(o.log||[]).length;
+    var withFilled=Object.keys(o.texts||{}).filter(function(d){return (o.texts[d]||{}).filled;}).length;
+    var withRaw=Object.keys(o.boards||{}).filter(function(d){return o.boards[d]&&o.boards[d].schedule&&o.boards[d].schedule.raw;}).length;
+    setStatus($("status"),"已讀取：排班板 "+nb+" 天、texts "+nt+" 天（其中有完整勤務文字 "+withFilled+" 天）、有準據原文 "+withRaw+" 天、統計 "+nlog+" 筆。","ok");
+    var blob=new Blob([txt],{type:"application/json"});
+    var a=$("backup");a.href=URL.createObjectURL(blob);a.classList.remove("hide");
+  }).catch(function(){setStatus($("status"),"讀取失敗，檢查網路或網址。","warn");cloudBefore=null;});
+}
+
+function doPreview(){
+  if(!cloudBefore){setStatus($("preview"),"請先按①讀取雲端。","warn");return;}
+  var days=readDays();
+  if(!days.length){setStatus($("preview"),"至少填一天（要有日期，且勤務或準據至少一格有內容）。","warn");return;}
+  var after=clone(cloudBefore);
+  var touched=mergeInto(after, days);
+  var err=verify(cloudBefore, after, touched);
+  var lines=days.map(function(d){var md=normMD(d.date);
+    return '<div style="margin-top:6px;"><span class="pill">'+ (md||"?日期無效") +'</span> '
+      +(d.filled?('勤務 '+d.filled.length+' 字'):'勤務 —')+'　'
+      +(d.raw?('準據 '+d.raw.length+' 字'):'準據 —')
+      +(cloudBefore.boards&&cloudBefore.boards[md]?'　<span style="color:#6C7268;">(已有排班板，保留分工只加準據)</span>':(d.raw?'　<span style="color:#6C7268;">(這天沒排班板，會建一個只有準據的空板)</span>':''))
+      +'</div>';
+  }).join("");
+  plannedDays=err?null:days;
+  var head=err
+    ? '<div class="warn">安全檢查沒過：'+err+'</div>'
+    : '<div class="ok">安全檢查通過 ✓ 只會新增/覆蓋這些天的文字，分工／統計／站哨完全不動。</div>';
+  $("preview").innerHTML='<div class="card"><label>預覽</label>'+head+lines+'</div>';
+  $("confirmWrap").classList.toggle("hide", !!err);
+  $("confirmText").value="";
+}
+
+function doWrite(){
+  if($("confirmText").value.trim()!=="上傳"){setStatus($("writeStatus"),"請先輸入「上傳」兩個字。","warn");return;}
+  if(!plannedDays){setStatus($("writeStatus"),"請先預覽並通過安全檢查。","warn");return;}
+  var url=$("url").value.trim();
+  setStatus($("writeStatus"),"再抓一次最新資料…","");
+  fetch(url).then(function(r){return r.text();}).then(function(txt){
+    var o=null;try{o=JSON.parse(txt);}catch(e){}
+    if(!o||!o.names){setStatus($("writeStatus"),"最新資料讀取異常（沒有 names），中止，不寫入。","warn");return;}
+    var after=clone(o);
+    var touched=mergeInto(after, plannedDays);
+    var err=verify(o, after, touched);
+    if(err){setStatus($("writeStatus"),"寫入前安全檢查沒過："+err+"（已中止，雲端未變）","warn");return;}
+    setStatus($("writeStatus"),"寫入中…","");
+    return fetch(url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(after)})
+      .then(function(){return fetch(url).then(function(r){return r.text();});})
+      .then(function(vtxt){
+        var v=null;try{v=JSON.parse(vtxt);}catch(e){}
+        var okFilled=plannedDays.filter(function(d){return d.filled&&v&&v.texts&&v.texts[normMD(d.date)]&&v.texts[normMD(d.date)].filled===d.filled;}).length;
+        var okRaw=plannedDays.filter(function(d){return d.raw&&v&&v.boards&&v.boards[normMD(d.date)]&&v.boards[normMD(d.date)].schedule&&v.boards[normMD(d.date)].schedule.raw===d.raw;}).length;
+        setStatus($("writeStatus"),"✅ 完成並已驗證：勤務原文 "+okFilled+" 天、準據原文 "+okRaw+" 天寫入成功。回 LINE 打「行程」就看得到了。","ok");
+      });
+  }).catch(function(e){setStatus($("writeStatus"),"寫入失敗："+((e&&e.message)||e)+"（雲端可能未變，建議重讀確認）","warn");});
+}
+
+$("btnFetch").onclick=fetchCloud;
+$("btnAddDay").onclick=function(){addDay("");};
+$("btnPreview").onclick=doPreview;
+$("btnWrite").onclick=doWrite;
+addDay("");
+</script>
+</body>
+</html>
